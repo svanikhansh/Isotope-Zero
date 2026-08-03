@@ -25,6 +25,13 @@ htmlcov/
 *.sqlite3
 .isotope_zero_cache/
 
+# --- Rust (Phase 6 native core) ---
+target/
+# compiled native extension is a build artifact (maturin develop regenerates it)
+isotope_zero/_native*.so
+isotope_zero/_native*.dylib
+isotope_zero/*/*.so
+
 # --- OS ---
 .DS_Store
 
