@@ -1,0 +1,35 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- venv / tooling ---
+.venv/
+venv/
+
+# --- tools ---
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- runtime / local data ---
+*.db
+*.sqlite
+*.sqlite3
+.isotope_zero_cache/
+
+# --- OS ---
+.DS_Store
+
+# --- local-only harness config (not part of the published package) ---
+.claude/
+
+# --- pre-existing scaffold repo checked in by hand ---
+Isotope Zero/
