@@ -1,0 +1,43 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "isotope-zero"
+version = "0.5.0a1"
+description = "Native NEON/AVX2 int8 SIMD dot-product kernel — unites SQ8 RAM savings with hardware SIMD latency"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Isotope Zero" }]
+dependencies = [
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
+    "pydantic>=2.6",
+    "mcp>=1.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+]
+
+[project.scripts]
+izero = "isotope_zero.cli.debug:main"
+izero-benchmark = "isotope_zero.eval.benchmark:main"
+izero-mcp = "isotope_zero.mcp.server:main"
+
+[tool.maturin]
+python-source = "."
+module-name = "isotope_zero._native"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

@@ -1,0 +1,23 @@
+[package]
+name = "isotope_core"
+version = "0.5.0"
+edition = "2021"
+
+[lib]
+name = "isotope_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["abi3-py310"] }
+# Zero-copy read of the numpy (n, dim) int8 matrix + f32 scales so the Rust
+# SIMD hot path never round-trips through Python ints (that would defeat the
+# sub-0.1 ms target). Matches pyo3 0.21 (rust_v0.2).
+numpy = "0.21"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+# On Apple Silicon (aarch64) this compiles down to NEON `sdot` automatically
+# when the `std::arch::aarch64` intrinsics are used. No target-feature flag
+# is needed: vdotq_s32 is available on all aarch64-apple-darwin targets.
