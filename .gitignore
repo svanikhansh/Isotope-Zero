@@ -27,10 +27,13 @@ htmlcov/
 
 # --- Rust (Phase 6 native core) ---
 target/
-# compiled native extension is a build artifact (maturin develop regenerates it)
-isotope_zero/_native*.so
-isotope_zero/_native*.dylib
-isotope_zero/*/*.so
+# compiled native extension is a build artifact (maturin develop regenerates it).
+# Match at ANY depth so it stays ignored after the prototype is archived under
+# prototypes/<version>/isotope_zero/ — not just at the repo root.
+**/_native*.so
+**/_native*.dylib
+**/*.so
+**/*.dylib
 
 # --- OS ---
 .DS_Store
