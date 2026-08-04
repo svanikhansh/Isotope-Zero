@@ -1,0 +1,7 @@
+# Method 3 mmap sidecar files — file-backed vector storage artifacts.
+# These are derived caches (rebuilt from the SQLite memories table); never
+# checked in. Also covered by the repo-root .isotope_zero_cache/ ignore, but
+# pinned here so a stray path can't slip past.
+*.bin
+*.bin.idx
+*.idx
