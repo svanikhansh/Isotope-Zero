@@ -1,0 +1,39 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "isotope-zero"
+version = "0.9.0a1"
+description = "Sub-millisecond Rust-accelerated local agent memory engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "onnxruntime>=1.16.0",
+    "numpy>=1.24.0",
+    "mcp>=1.0.0",
+    # Pure-Python fallback path needs the tokenizer + pydantic (contract parity
+    # with the archived v0.1 prototype — see prototypes/python_v0.1).
+    "tokenizers>=0.15",
+    "pydantic>=2.6",
+]
+
+[project.scripts]
+izero = "isotope_zero.cli.debug:main"
+izero-mcp = "isotope_zero.mcp.server:main"
+# Keep the v0.1 quickstart contract (izero-benchmark was dropped from the
+# Phase 6 spec's script list; restoring it avoids a regression).
+izero-benchmark = "isotope_zero.eval.benchmark:main"
+
+[tool.maturin]
+python-source = "."
+module-name = "isotope_zero._native"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
