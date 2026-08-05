@@ -51,7 +51,7 @@ jobs:
           CIBW_BUILD_FRONTEND: pip
           CIBW_BUILD: "cp310-* cp311-* cp312-*"
           CIBW_SKIP: "*-musllinux* *i686* *-win32"
-          CIBW_ARCHS_LINUX: x86_64 aarch64
+          CIBW_ARCHS_LINUX: x86_64
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_ARCHS_WINDOWS: AMD64
           # manylinux baseline: cibuildwheel 4.x defaults to manylinux_2_28
@@ -62,11 +62,18 @@ jobs:
           # pinning a dated tag breaks when the `latest` rebuild drops
           # interpreters (cibuildwheel 2.21 + cp38-removed image failed with
           # "env: '/opt/python/cp38-cp38/bin/python': No such file or directory").
+          # Linux aarch64 is omitted from v1.0.0: cibuildwheel builds it under
+          # QEMU emulation, and the Rust+numpy cross-compile hung past 3h with
+          # zero convergence across five runs (x86_64 builds natively in
+          # minutes). aarch64-manylinux wheels are a post-1.0 enhancement;
+          # arm64 users fall back to `pip install` from sdist or the macOS
+          # arm64 wheel. Linux x86_64 (the overwhelming majority of installs)
+          # is the must-have and ships now.
           # Per-OS Rust cross-compile targets cibuildwheel needs before maturin
           # can build the abi3 extension. (The global form failed macos-14:
           # x86_64-apple-darwin was never added, so rustc had no core stdlib
           # for the x86_64 slice -> error[E0463].)
-          CIBW_BEFORE_BUILD_LINUX: "rustup target add aarch64-unknown-linux-gnu || true"
+          CIBW_BEFORE_BUILD_LINUX: "rustup target add x86_64-unknown-linux-gnu || true"
           CIBW_BEFORE_BUILD_MACOS: "rustup target add x86_64-apple-darwin aarch64-apple-darwin || true"
           # abi3 cross-build: don't link against libpython. The manylinux2014
           # images ship no static libpython3.x.a, and with extension-module the
