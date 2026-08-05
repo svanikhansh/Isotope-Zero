@@ -14,7 +14,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # abi3-py310: stable ABI, one wheel serves CPython 3.10+.
-pyo3 = { version = "0.21", features = ["abi3-py310"] }
+# extension-module: never link against libpython. Required for the manylinux
+# wheel build (the manylinux2014 images ship no static libpython, and abi3
+# builds resolve interpreter symbols from the CPython that imports the module).
+# maturin sets PYO3_BUILD_EXTENSION_MODULE=1 at build time; declaring it here
+# keeps `cargo build` alone (and tools that don't go through maturin) correct.
+pyo3 = { version = "0.21", features = ["abi3-py310", "extension-module"] }
 # Rayon data-parallelism inside the SIMD batch (negation/vector scan).
 rayon = "1.8"
 # Zero-copy read of the (n, dim) float32 numpy matrix so the Rust hot path

@@ -54,8 +54,17 @@ jobs:
           CIBW_ARCHS_LINUX: x86_64 aarch64
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_ARCHS_WINDOWS: AMD64
-          # maturin needs the aarch64 Linux Rust target for cross-compiling.
-          CIBW_BEFORE_BUILD: "rustup target add aarch64-unknown-linux-gnu || true"
+          # Per-OS Rust cross-compile targets cibuildwheel needs before maturin
+          # can build the abi3 extension. (The global form failed macos-14:
+          # x86_64-apple-darwin was never added, so rustc had no core stdlib
+          # for the x86_64 slice -> error[E0463].)
+          CIBW_BEFORE_BUILD_LINUX: "rustup target add aarch64-unknown-linux-gnu || true"
+          CIBW_BEFORE_BUILD_MACOS: "rustup target add x86_64-apple-darwin aarch64-apple-darwin || true"
+          # abi3 cross-build: don't link against libpython. The manylinux2014
+          # images ship no static libpython3.x.a, and with extension-module the
+          # symbols resolve from the importing CPython. Mirrors the pyo3
+          # documented flag for abi3-only builds.
+          CIBW_ENVIRONMENT_LINUX: "PYO3_NO_PYTHON=1"
           CIBW_TEST_COMMAND: "python -c \"import isotope_zero; import isotope_zero._native; print(isotope_zero.__version__)\""
 
       - uses: actions/upload-artifact@v4
