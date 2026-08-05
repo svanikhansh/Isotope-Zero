@@ -451,6 +451,16 @@ _SWEEP_HEARTBEAT_ID = "__sweep_hb__"
 _BUSY_TIMEOUT_MS = 5000
 # Same 5-second busy timeout, in seconds, for `sqlite3.connect(timeout=...)`.
 _WARFARE_CONNECT_TIMEOUT_S = _BUSY_TIMEOUT_MS / 1000.0
+# Bounded per-op retry after a busy_timeout exhaustion. On heavily contended
+# runners (4 processes + a 50 ms consolidation sweep on one WAL DB) SQLite can
+# still raise "database is locked" once the 5 s busy_timeout lapses — that is a
+# TRANSIENT, recoverable condition, not corruption. A real client write path
+# retries a transient lock; the worker mirrors that instead of permanently
+# dropping the op into `operational_errors` (which made the zero-error
+# assertion flake on a single transient under Windows runner contention,
+# e.g. 799/800 ops). The cap keeps a genuine deadlock from looping forever.
+_WARFARE_OP_RETRY_BACKOFF_S = 0.02
+_WARFARE_OP_MAX_RETRIES = 3
 # Parent-side consolidation sweep cadence (seconds): the sweep runs beside the
 # workers ~every 10 ms so it contends with live writes, proving the sweep's
 # own busy_timeout and atomic apply hold under real lock pressure.
@@ -492,22 +502,32 @@ def _warfare_worker(args: tuple) -> dict:
         except sqlite3.OperationalError:
             pass
     for c in range(cycles):
-        try:
-            if rng.random() < 0.5:
-                row_id = f"w{rng.randrange(_WARFARE_ROW_POOL)}"
-                fact = f"worker {wid} cycle {c} prefers port {rng.randrange(1024, 9000)}"
-                blob = _worker_embed_blob(fact)
-                conn.execute("INSERT OR REPLACE INTO memories(id,fact,evidence,timestamp,tags,source_tokens,"
-                             "embedding,access_count,last_access) VALUES(?,?,?,?,?,?,?,?,?)",
-                             (row_id, fact, "ev", time.time(), '["warfare"]', 10, blob, 0, time.time()))
-            else:
-                conn.execute("SELECT id FROM memories WHERE fact LIKE ? LIMIT 5",
-                             (f"%port {rng.randrange(1024, 9000)}%",)).fetchall()
-            ops += 1
-        except sqlite3.OperationalError:
-            operational_errors += 1
-        except sqlite3.DatabaseError:
-            database_errors += 1
+        # Bounded retry: a transient busy_timeout exhaustion ("database is
+        # locked" after the 5 s wait) is recoverable, so re-attempt the op a
+        # few times with a tiny backoff before surrendering it. Only an
+        # exhaustion that survives the cap counts as a real operational error.
+        for _attempt in range(_WARFARE_OP_MAX_RETRIES + 1):
+            try:
+                if rng.random() < 0.5:
+                    row_id = f"w{rng.randrange(_WARFARE_ROW_POOL)}"
+                    fact = f"worker {wid} cycle {c} prefers port {rng.randrange(1024, 9000)}"
+                    blob = _worker_embed_blob(fact)
+                    conn.execute("INSERT OR REPLACE INTO memories(id,fact,evidence,timestamp,tags,source_tokens,"
+                                 "embedding,access_count,last_access) VALUES(?,?,?,?,?,?,?,?,?)",
+                                 (row_id, fact, "ev", time.time(), '["warfare"]', 10, blob, 0, time.time()))
+                else:
+                    conn.execute("SELECT id FROM memories WHERE fact LIKE ? LIMIT 5",
+                                 (f"%port {rng.randrange(1024, 9000)}%",)).fetchall()
+                ops += 1
+                break
+            except sqlite3.OperationalError:
+                if _attempt < _WARFARE_OP_MAX_RETRIES:
+                    time.sleep(_WARFARE_OP_RETRY_BACKOFF_S)
+                    continue
+                operational_errors += 1
+            except sqlite3.DatabaseError:
+                database_errors += 1
+                break
     conn.close()
     return {"ops": ops, "operational_errors": operational_errors, "database_errors": database_errors}
 
