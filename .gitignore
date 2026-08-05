@@ -43,3 +43,8 @@ target/
 
 # --- pre-existing scaffold repo checked in by hand ---
 Isotope Zero/
+
+# --- vendored third-party reference clone (mem0 comparative audit) ---
+# A full upstream checkout used only for the MEM0_COMPARATIVE_AUDIT; never
+# commit it (99 MB of third-party code). The audit report lives in the repo.
+mem0_repo/

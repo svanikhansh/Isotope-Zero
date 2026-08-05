@@ -1,0 +1,16 @@
+[project]
+name = "adaptive-dispatch"
+version = "0.1.0"
+description = "Scale-adaptive vector search dispatcher (int8 SIMD vs float32 BLAS)"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["adaptive_search"]

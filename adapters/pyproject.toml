@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "izero-adapters"
+version = "0.1.0"
+description = "Drop-in Isotope Zero memory providers for LangChain, LlamaIndex, AutoGen, and CrewAI."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Isotope Zero" }]
+# Core adapter logic degrades gracefully with ZERO hard third-party deps — the
+# _engine shim falls back to a deterministic stub embedder when onnxruntime /
+# the daemon are absent. Only `rich`-style niceties are optional too. We keep
+# the install footprint tiny so `pip install -e adapters` works anywhere.
+dependencies = []
+
+[project.optional-dependencies]
+# Framework adapters — each pulls only its own framework. Install one or many:
+#   pip install -e "adapters[langchain]"
+#   pip install -e "adapters[langchain,llamaindex,autogen,crewai]"
+langchain = [
+    "langchain-core>=0.1.0",
+]
+llamaindex = [
+    "llama-index-core>=0.10.0",
+]
+autogen = [
+    "pyautogen>=0.2.0",
+]
+crewai = [
+    "crewai>=0.30.0",
+]
+# Real embeddings (otherwise the stub embedder is used for tests/local dev).
+onnx = [
+    "onnxruntime>=1.16.0",
+    "tokenizers>=0.15.0",
+    "numpy>=1.24.0",
+]
+# Dev / test tooling.
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/svanikhansh/isotope_zero"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["izero_adapters*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"

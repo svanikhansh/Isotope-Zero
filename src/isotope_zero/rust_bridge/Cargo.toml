@@ -1,0 +1,28 @@
+[package]
+name = "isotope_core"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+# cdylib -> a single loadable extension module (the .so/.pyd/.dylib that
+# CPython imports as `isotope_zero._native`). The lib name here is the crate
+# name only; the Python-side import name is fixed by maturin's
+# `module-name = "isotope_zero._native"` in the root pyproject.toml, which in
+# turn must match the #[pymodule] fn name `_native` (=> PyInit__native).
+name = "isotope_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3-py310: stable ABI, one wheel serves CPython 3.10+.
+pyo3 = { version = "0.21", features = ["abi3-py310"] }
+# Rayon data-parallelism inside the SIMD batch (negation/vector scan).
+rayon = "1.8"
+# Zero-copy read of the (n, dim) float32 numpy matrix so the Rust hot path
+# never round-trips through Python float objects (that would defeat the
+# sub-0.05 ms target). Pinned to the pyo3 0.21-compatible release.
+numpy = "0.21"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,112 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0", "patchelf>=0.16.4; platform_system=='Linux'"]
+build-backend = "maturin"
+
+[project]
+name = "isotope-zero"
+version = "1.0.0"
+description = "Sub-millisecond, local-first cognitive memory layer for AI agents — Rust-accelerated hybrid retrieval, Ebbinghaus decay, and knowledge compaction."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Svanik Kolli" },
+]
+keywords = ["memory", "agent", "llm", "embeddings", "vector-search", "onnx", "rag", "sqlite"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# ── Core dependencies (minimal) ──────────────────────────────────────────
+# numpy: the float32 BLAS hot path (`matrix @ query`) and the int8 quantizer.
+# sqlite3 is stdlib and intentionally NOT listed.
+dependencies = [
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+# In-process local ONNX embeddings ($0 inference, no API bill).
+onnx = ["onnxruntime>=1.16.0"]
+# Async local-LLM / embedding daemon transport.
+ollama = ["httpx>=0.24.0"]
+# Remote OpenAI-compatible embedding endpoint transport.
+openai = ["httpx>=0.24.0"]
+# MCP (Model Context Protocol) server surface.
+mcp = ["mcp>=1.0.0"]
+# Pure-Python fallback path (contract parity with the archived v0.1 baseline):
+# tokenizer + schema for the deterministic write path when ONNX is unavailable.
+fallback = ["tokenizers>=0.15", "pydantic>=2.6"]
+# Convenience aggregator: every optional runtime in one install.
+all = [
+    "onnxruntime>=1.16.0",
+    "httpx>=0.24.0",
+    "mcp>=1.0.0",
+    "tokenizers>=0.15",
+    "pydantic>=2.6",
+]
+# Framework adapters (LangChain / LlamaIndex / AutoGen / CrewAI). The
+# ``izero_adapters`` package itself ships in this repo under ``adapters/`` and
+# is installed separately (``pip install -e "adapters[<framework>]"``); this
+# extra pulls the framework runtimes so the SDK + adapters share one venv.
+adapters = [
+    "langchain-core>=0.1.0",
+    "llama-index-core>=0.10.0",
+    "pyautogen>=0.2.0",
+    "crewai>=0.30.0",
+]
+
+[project.scripts]
+izero = "isotope_zero.cli.debug:main"
+izero-mcp = "isotope_zero.mcp.server:main"
+izero-benchmark = "isotope_zero.eval.benchmark:main"
+
+[project.urls]
+Homepage = "https://github.com/isotope-zero/isotope-zero"
+Repository = "https://github.com/isotope-zero/isotope-zero"
+Documentation = "https://github.com/isotope-zero/isotope-zero#readme"
+Issues = "https://github.com/isotope-zero/isotope-zero/issues"
+
+[tool.maturin]
+# src/ layout: the Python package lives under src/, the Rust sources under
+# src/isotope_zero/rust_bridge/. maturin compiles them to isotope_zero/_native
+# (the last path component MUST match the #[pymodule] fn name `_native`).
+python-source = "src"
+module-name = "isotope_zero._native"
+manifest-path = "src/isotope_zero/rust_bridge/Cargo.toml"
+# Ship the pure-Python parts even where the Rust ext can't build; the native
+# kernel is a zero-copy fast path with a NumPy fallback (core/native.py).
+include = [
+    "src/isotope_zero/rust_bridge/Cargo.toml",
+    "src/isotope_zero/rust_bridge/src/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+asyncio_mode = "auto"
+markers = [
+    "perf: performance / latency SLA benchmarks",
+    "stress: large-scale ingestion and resource-budget stress tests",
+    "fuzz: hypothesis property-based fuzzing",
+    "integration: cross-component / real-embedding integration tests",
+    "onnx: tests that require the optional onnxruntime embedder (is_real=True)",
+    "slow: tests taking longer than ~5s",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    # asyncio_mode="auto" is a no-op without pytest-asyncio (see tests/README.md);
+    # silence the config warning so headless runs stay clean.
+    "ignore::pytest.PytestConfigWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

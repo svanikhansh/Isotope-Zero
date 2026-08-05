@@ -1,0 +1,47 @@
+{
+  "name": "izero-cli",
+  "version": "0.1.0",
+  "description": "Universal npm wrapper for izero-cli — a read-only terminal inspection tool for Isotope Zero memory engines. The postinstall hook provisions a private Python venv and installs the real CLI; the `izero` bin proxies through to it.",
+  "license": "MIT",
+  "author": "Isotope Zero",
+  "homepage": "https://github.com/svk/isotope_zero#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/svk/isotope_zero.git",
+    "directory": "tools/izero_cli"
+  },
+  "bugs": {
+    "url": "https://github.com/svk/isotope_zero/issues"
+  },
+  "keywords": [
+    "isotope-zero",
+    "sqlite",
+    "inspection",
+    "cli",
+    "memory",
+    "vector-search"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "freebsd",
+    "openbsd",
+    "netbsd"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "bin": {
+    "izero": "bin/izero.js"
+  },
+  "files": [
+    "bin/izero.js",
+    "scripts/postinstall.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js",
+    "test": "node --check bin/izero.js && node --check scripts/postinstall.js && echo parse ok"
+  }
+}

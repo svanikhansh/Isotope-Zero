@@ -1,0 +1,67 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "isotope-zero"
+version = "1.0.0"
+description = "Sub-millisecond Rust-accelerated local agent memory engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "onnxruntime>=1.16.0",
+    "numpy>=1.24.0",
+    "mcp>=1.0.0",
+    # Pure-Python fallback path needs the tokenizer + pydantic (contract parity
+    # with the archived v0.1 prototype — see prototypes/python_v0.1).
+    "tokenizers>=0.15",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+# Test/dev extra: run the full semantic suite (real ONNX embeddings) + the
+# pytest harness. Without `onnxruntime`+`tokenizers` the embedder falls back
+# to deterministic pseudo-embeddings and ~10 semantic-accuracy tests skip
+# (see tests/README.md "Environmental test dependency"). Installing this
+# extra turns them back on.
+test = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+    "psutil>=5.9",
+]
+# Optional runtimes (the adapters surface).
+adapters = ["langchain-core>=0.3", "crewai", "pyautogen"]
+
+[project.scripts]
+izero = "isotope_zero.cli.debug:main"
+izero-mcp = "isotope_zero.mcp.server:main"
+# Keep the v0.1 quickstart contract (izero-benchmark was dropped from the
+# Phase 6 spec's script list; restoring it avoids a regression).
+izero-benchmark = "isotope_zero.eval.benchmark:main"
+
+[tool.maturin]
+python-source = "."
+module-name = "isotope_zero._native"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Register custom marks so `@pytest.mark.<m>` doesn't emit PytestUnknownMarkWarning.
+markers = [
+    "perf: latency/p99 SLA benchmarks (sub-millisecond vector, <5ms hybrid)",
+    "stress: scale tests (10k-card ingestion + retrieval)",
+    "fuzz: hypothesis property-based tests",
+    "integration: cross-subsystem integration (daemon, store+graph, adapters)",
+    "onnx: requires the onnxruntime extra for real semantic embeddings",
+    "slow: long-running (>5s) tests, deselect with -m 'not slow'",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    # Silences the "Unknown config option: asyncio_mode" warning when
+    # pytest-asyncio isn't installed (the minimal-config venv). Harmless —
+    # async tests use anyio's backend; the mode is a no-op without the plugin.
+    "ignore::pytest.PytestConfigWarning",
+]

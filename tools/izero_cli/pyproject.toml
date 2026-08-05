@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "izero-cli"
+version = "0.1.0"
+description = "Isolated read-only terminal inspection tool for Isotope Zero memory engines."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Isotope Zero"},
+]
+keywords = ["isotope-zero", "sqlite", "inspection", "cli", "read-only"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+# Vector math acceleration (TF-IDF vectorization, semantic cosine). The data
+# layer degrades gracefully to pure-Python loops when numpy is absent, so this
+# is a soft dependency.
+numpy = ["numpy"]
+vector = ["numpy"]
+# Real ONNX semantic search path. Without these, search_db falls back to the
+# always-available lexical TF-IDF path. Never a hard dependency.
+onnx = ["onnxruntime", "tokenizers", "numpy"]
+# Everything optional (for a full dev install).
+all = ["numpy", "onnxruntime", "tokenizers"]
+
+[project.scripts]
+izero = "izero_cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["izero_cli*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+izero_cli = ["py.typed"]
