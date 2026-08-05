@@ -98,6 +98,7 @@ manifest-path = "src/isotope_zero/rust_bridge/Cargo.toml"
 include = [
     "src/isotope_zero/rust_bridge/Cargo.toml",
     "src/isotope_zero/rust_bridge/src/*",
+    "LICENSE",
 ]
 
 [tool.pytest.ini_options]
