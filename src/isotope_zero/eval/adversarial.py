@@ -20,7 +20,6 @@ import gc
 import math
 import os
 import random
-import resource
 import sqlite3
 import subprocess
 import sys
@@ -28,6 +27,11 @@ import tempfile
 import time
 from array import array
 from concurrent.futures import ProcessPoolExecutor
+
+try:
+    import resource
+except ImportError:  # Windows: no POSIX `resource` module; RSS measurement N/A.
+    resource = None  # type: ignore[assignment]
 from dataclasses import dataclass
 
 from ..core.consolidation import Consolidator

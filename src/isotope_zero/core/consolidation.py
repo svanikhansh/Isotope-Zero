@@ -237,8 +237,19 @@ class Consolidator:
                                   (only if also never-recalled and past grace).
         min_age_seconds  = 3600 — 1 hour grace period before a never-recalled
                                   fresh write can be pruned.
-        dedup_threshold  = 0.88 — cosine above this (OR exact fact equality OR
+        dedup_threshold  = 0.84 — cosine above this (OR exact fact equality OR
                                   high token overlap) flags a duplicate.
+                                  (0.84, not 0.88: the single-token-substitution
+                                  correction regression cases — e.g. "default is
+                                  follow." -> "default changed to manual." — sit
+                                  at cosine ~0.89 on the reference host, and real
+                                  ONNX forward passes vary ~1-2% across
+                                  environments (macOS Accelerate/CPU kernels,
+                                  Python/numpy bindings). At 0.88 that pair was
+                                  <1.3% from the boundary and flaked on CI; 0.84
+                                  keeps genuine near-duplicates merging with
+                                  margin while still far above unrelated facts
+                                  (cosine <= ~0.33 in the distinct-card test).)
         token_overlap_floor = 0.7 — fact token-overlap above this also flags
                                     a duplicate (paraphrase catch-all).
     """
@@ -248,7 +259,7 @@ class Consolidator:
         store: MemoryStore,
         embedder: Any = None,
         *,
-        dedup_threshold: float = 0.88,
+        dedup_threshold: float = 0.84,
         token_overlap_floor: float = 0.70,
         w_recency: float = 0.7,
         w_access: float = 0.3,
