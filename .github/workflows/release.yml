@@ -92,6 +92,13 @@ jobs:
     needs: [build-sdist, build-wheels]
     runs-on: ubuntu-latest
     environment: pypi
+    # Job-scoped permissions: OIDC trusted publishing needs id-token: write to
+    # mint a short-lived API token from PyPI. contents: write attaches the
+    # built wheels to the GitHub Release. (Kept job-local so the wheel-build
+    # jobs stay least-privilege with only the workflow-wide contents: write.)
+    permissions:
+      id-token: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,10 +113,13 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        # Uses trusted publishing (OIDC) by default; set PYPI_API_TOKEN as a
-        # fallback secret for accounts without trusted publishing configured.
+        # Trusted publishing (OIDC) is the default: with id-token: write
+        # granted above and no `password` set, the action mints a short-lived
+        # token from PyPI — no long-lived secret to rotate. PYPI_API_TOKEN is
+        # an optional fallback for accounts that prefer an API token; when the
+        # secret is absent the empty default keeps OIDC as the active path.
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_API_TOKEN || '' }}
 
       - name: Create GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
