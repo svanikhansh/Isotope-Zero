@@ -127,6 +127,13 @@ jobs:
         # secret is absent the empty default keeps OIDC as the active path.
         with:
           password: ${{ secrets.PYPI_API_TOKEN || '' }}
+          # skip-existing: idempotent re-runs. PyPI rejects re-uploads of files
+          # already published for an immutable version with 400 "File already
+          # exists" — a re-run after a partial publish (e.g. sdist failed but
+          # wheels landed) would otherwise abort on the first wheel before
+          # reaching the still-missing artifact. With skip-existing, already-
+          # published files are no-ops and only missing ones upload.
+          skip-existing: true
 
       - name: Create GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
