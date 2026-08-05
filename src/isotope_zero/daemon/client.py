@@ -65,6 +65,15 @@ class DaemonClient:
         spawn: bool = True,
         connect_timeout: float = 10.0,
     ) -> None:
+        if not hasattr(socket, "AF_UNIX"):
+            # The daemon is a POSIX transport (Unix-domain socket + shared
+            # memory); Windows CPython builds don't expose socket.AF_UNIX.
+            # Fail with intent instead of an AttributeError deep in connect.
+            raise NotImplementedError(
+                "DaemonClient requires POSIX Unix-domain sockets and shared "
+                "memory and is unsupported on Windows. Use the in-process "
+                "EmbeddingEngine (isotope_zero.embeddings.onnx_embed) instead."
+            )
         self.model_name = model_name
         self.socket_path = socket_path
         self.spawn = spawn

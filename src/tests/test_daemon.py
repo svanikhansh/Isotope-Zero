@@ -95,9 +95,19 @@ def _clean_slate():
     _unlink_default_socket()
 
 
+# The daemon is a POSIX transport (Unix-domain socket + shared memory);
+# Windows CPython builds don't expose socket.AF_UNIX, so the suite skips
+# there rather than failing on AttributeError.
+needs_unix_sockets = pytest.mark.skipif(
+    not hasattr(socket, "AF_UNIX"),
+    reason="embedding daemon requires POSIX Unix-domain sockets",
+)
+
+
 # ---------------------------------------------------------------------- #
 # Tests
 # ---------------------------------------------------------------------- #
+@needs_unix_sockets
 def test_hello():
     """DaemonClient hello reports is_real/dim matching an in-process engine
     using the same cache dir."""
@@ -120,6 +130,7 @@ def test_hello():
         assert st["n_requests"] >= 1
 
 
+@needs_unix_sockets
 def test_embed_bit_identical_parity():
     """Daemon vectors must EQUAL (==, no tolerance) the in-process engine's,
     including across the 32-chunk ONNX forward boundary."""
@@ -160,6 +171,7 @@ def test_embed_bit_identical_parity():
     )
 
 
+@needs_unix_sockets
 def test_auto_spawn():
     """With no daemon pre-running, a fresh DaemonClient auto-spawns one and
     answers a ping + embed."""
@@ -175,6 +187,7 @@ def test_auto_spawn():
         client.close()
 
 
+@needs_unix_sockets
 def test_store_use_daemon_flag():
     """MemoryStore(use_daemon=True) wires a DaemonClient; a card embedded via
     the daemon is stored and returned by vector_search."""
@@ -206,6 +219,7 @@ def test_store_use_daemon_flag():
         store.close()
 
 
+@needs_unix_sockets
 def test_cleanup():
     """shutdown() makes the daemon exit and unlink its socket."""
     client = DaemonClient(spawn=True)
