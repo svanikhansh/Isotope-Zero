@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "isotope-zero"
-version = "1.0.0"
+version = "1.1.0"
 description = "Sub-millisecond, local-first cognitive memory layer for AI agents — Rust-accelerated hybrid retrieval, Ebbinghaus decay, and knowledge compaction."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,6 +44,10 @@ mcp = ["mcp>=1.0.0"]
 # Pure-Python fallback path (contract parity with the archived v0.1 baseline):
 # tokenizer + schema for the deterministic write path when ONNX is unavailable.
 fallback = ["tokenizers>=0.15", "pydantic>=2.6"]
+# Live TUI dashboard smooth-refresh renderer (``izero dashboard``). Absent this,
+# the dashboard falls back to a pure-stdlib clear-and-reprint loop — the
+# subcommand works with zero optional deps, just with mild flicker.
+dashboard = ["rich>=13.0"]
 # Convenience aggregator: every optional runtime in one install.
 all = [
     "onnxruntime>=1.16.0",
@@ -51,6 +55,7 @@ all = [
     "mcp>=1.0.0",
     "tokenizers>=0.15",
     "pydantic>=2.6",
+    "rich>=13.0",
 ]
 # Framework adapters (LangChain / LlamaIndex / AutoGen / CrewAI). The
 # ``izero_adapters`` package itself ships in this repo under ``adapters/`` and

@@ -1,0 +1,43 @@
+name: Release (npm)
+
+# Publishes the `isotope-zero` npm launcher package to npmjs.com whenever a
+# `v*` tag is pushed — the same trigger as the PyPI Release workflow, but a
+# separate file so an npm failure never blocks the PyPI/GitHub Release path
+# (and vice versa). The npm package is a thin Node launcher that manages an
+# isolated Python env and delegates to the Python `izero` CLI; it carries no
+# native binaries and is platform-independent.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read   # checkout
+  id-token: write  # npm provenance (Sigstore) — requires OIDC
+
+jobs:
+  publish-npm:
+    name: Publish isotope-zero to npm
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install (no deps — launcher is pure stdlib)
+        working-directory: npm
+        run: npm install --no-fund --no-audit
+
+      - name: Test
+        working-directory: npm
+        run: npm test
+
+      - name: Publish to npm (with provenance)
+        working-directory: npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

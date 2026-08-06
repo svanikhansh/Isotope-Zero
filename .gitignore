@@ -35,6 +35,12 @@ target/
 **/*.so
 **/*.dylib
 
+# --- npm (npm/ launcher package) ---
+node_modules/
+npm/.npm/
+npm/package-lock.json
+.npmrc
+
 # --- OS ---
 .DS_Store
 

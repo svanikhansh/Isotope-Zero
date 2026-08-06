@@ -224,8 +224,14 @@ class IsotopeZero:
             tags=out_tags,
             embedding=embedding,
             importance=float(importance),
+            scope=effective_scope or "default",
         )
-        self.store.add(card, scope=effective_scope)
+        # ``store.update`` is a true id upsert (ON CONFLICT DO UPDATE), so a
+        # re-``remember`` of an existing id overwrites in place — matching the
+        # docstring contract ("re-remember an existing id logs history +
+        # overwrites"). ``store.add`` is a plain INSERT and would raise
+        # sqlite3.IntegrityError on the duplicate id.
+        self.store.update(card)
         log.debug("remember id=%s fact=%r tags=%s scope=%s", card_id, fact[:80], card.tags, effective_scope)
         return card_id
 

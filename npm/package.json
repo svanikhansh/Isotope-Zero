@@ -1,0 +1,41 @@
+{
+  "name": "isotope-zero",
+  "version": "1.1.0",
+  "description": "Global `izero` CLI launcher for isotope-zero — a sub-millisecond, local-first cognitive memory layer for AI agents. This npm package is a thin launcher that manages an isolated Python env and delegates to the Python `izero` CLI.",
+  "type": "module",
+  "bin": {
+    "izero": "bin/izero.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "memory",
+    "agent",
+    "llm",
+    "embeddings",
+    "vector-search",
+    "rag",
+    "cli",
+    "isotope-zero"
+  ],
+  "author": "Svanik Kolli",
+  "license": "MIT",
+  "homepage": "https://github.com/svanikhansh/Isotope-Zero",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/svanikhansh/Isotope-Zero.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/svanikhansh/Isotope-Zero/issues"
+  }
+}
