@@ -719,7 +719,11 @@ def main(argv: list[str] | None = None) -> int:
             "Run a subcommand with -h for its flags."
         ),
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    # Not required=True: a bare ``izero`` (no subcommand) launches the interactive
+    # onboarding + command menu (cli.menu.run_menu) instead of erroring. Unknown
+    # subcommands still error here — argparse rejects them during parse_args
+    # regardless of `required`. Direct ``izero <cmd> ...`` is unchanged.
+    sub = parser.add_subparsers(dest="command")
 
     # inspect
     p_inspect = sub.add_parser(
@@ -1023,6 +1027,27 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    # Bare ``izero`` (no subcommand) → interactive onboarding + command menu.
+    # This MUST come before _resolve_db_path(args.db): ``--db`` is a subparser
+    # option, so a bare invocation has no ``args.db`` attribute at all. The menu
+    # resolves its own default path. Lazy import keeps
+    # `import isotope_zero.cli.debug` cheap (rich, if present, is only pulled in
+    # when the menu actually runs). See cli/menu.py.
+    if args.command is None:
+        from .menu import run_menu
+
+        # _resolve_db_path(None) falls back to ":memory:" when the default DB
+        # has never been created. That is the right default for one-shot
+        # inspect-style commands, but the interactive menu is where a user
+        # *adds* their first memory — pointing it at ":memory:" would silently
+        # discard everything on exit. Use the real on-disk default path instead
+        # (the store is created on first write via _open_client(create=True)).
+        db_path = _resolve_db_path(None)
+        if db_path == ":memory:":
+            db_path = _DEFAULT_DB
+        return run_menu(db_path)
+
     db_path = _resolve_db_path(args.db)
 
     if args.command == "inspect":

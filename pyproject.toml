@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "isotope-zero"
-version = "1.1.0"
+version = "1.1.1"
 description = "Sub-millisecond, local-first cognitive memory layer for AI agents — Rust-accelerated hybrid retrieval, Ebbinghaus decay, and knowledge compaction."
 readme = "README.md"
 requires-python = ">=3.10"
