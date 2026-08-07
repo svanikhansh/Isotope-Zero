@@ -245,6 +245,15 @@ npx izero-cli --help       # one-off, no global install
 
 ### Use
 
+**No flags, no memory of subcommands?** Running bare `izero` (no subcommand)
+opens an **interactive onboarding menu** — a welcome banner showing where your
+memories live, then an arrow-key list of commands (`add a memory`, `recall
+something`, `open the live dashboard`, …). Pick one, answer the prompts, and it
+runs and returns to the menu. Arrow-key navigation needs the optional `rich`
+(`pip install isotope-zero[dashboard]`); without it the menu falls back to a
+numbered list that works in every terminal. Direct `izero <command> ...` still
+works unchanged for scripts and power users.
+
 ```python
 from isotope_zero.client import IsotopeZero
 

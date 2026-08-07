@@ -1,16 +1,18 @@
 // ensure-env.js — guarantee a Python interpreter that can import isotope_zero.
 //
 // Resolution order (Strategy A, uv-first with graceful degradation):
-//   1. `uv` on PATH → create/use ~/.izero/venv with isotope-zero==<pkgVer>
-//   2. No `uv` → bootstrap uv single-binary into ~/.izero/bin, then (1)
-//   3. Bootstrap fails (offline/sandbox) → system python3 + pip install --user
+//   1. Existing ~/.izero/venv already satisfies isotope-zero==<pkgVer> → reuse
+//      it as-is (the venv is the durable home; uv may be absent this run)
+//   2. `uv` on PATH, or bootstrapped into ~/.izero/bin → create/refresh the venv
+//   3. Bootstrap fails (offline/sandbox) or uv can't install → system python3 +
+//      pip install --user
 //   4. No python at all → throw ENOPython (caller prints actionable error)
 //
 // The venv is pinned to the npm package version so npm and PyPI never drift:
 // `npm i -g isotope-zero@1.0.0` → `isotope-zero==1.0.0` in the venv.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -83,11 +85,41 @@ if (isWin) {
 
 /** Create/refresh the uv venv at VENV_DIR with isotope-zero pinned to pkgVer. */
 function ensureUvVenv(uvBin, pkgVer) {
+  // Fast path: a previous run already built + stamped the right version.
+  if (readStamp() === pkgVer && hasIsotopeZero(venvPython(), pkgVer)) return true;
+
   const needsBuild = !existsSync(join(VENV_DIR, "pyvenv.cfg"));
   if (needsBuild) {
     mkdirSync(IZERO_HOME, { recursive: true });
-    const r = spawnSync(uvBin, ["venv", VENV_DIR], { stdio: "pipe", encoding: "utf8" });
-    if (r.status !== 0) return false;
+    // Atomic build lock: mkdir is exclusive on POSIX, so two concurrent izero
+    // invocations can't both run `uv venv` into the same dir. The loser polls
+    // for the winner's venv to appear (≤60s), then reuses it. This matters for
+    // agent harnesses that launch parallel `izero` subprocesses: without it, the
+    // losing process could fall through to `pip install --user` into the system
+    // Python. A stale lock self-heals — the stamp/hasIsotopeZero probe re-
+    // verifies, and the next clean build removes it.
+    const lockDir = join(IZERO_HOME, ".venv-build-lock");
+    let gotLock = false;
+    try {
+      mkdirSync(lockDir); // throws EEXIST if another process holds it
+      gotLock = true;
+    } catch (e) {
+      if (e.code !== "EEXIST") throw e;
+    }
+    if (gotLock) {
+      try {
+        const r = spawnSync(uvBin, ["venv", VENV_DIR], { stdio: "pipe", encoding: "utf8" });
+        if (r.status !== 0) return false;
+      } finally {
+        try { rmSync(lockDir, { recursive: true, force: true }); } catch {}
+      }
+    } else {
+      // Wait for the holder's build, then fall through to the probe/install
+      // below (which reuses the venv once pyvenv.cfg exists).
+      for (let i = 0; i < 120 && !existsSync(join(VENV_DIR, "pyvenv.cfg")); i++) {
+        spawnSync(process.execPath, ["-e", "require('timers').setTimeout(()=>0,500)"], { stdio: "ignore" });
+      }
+    }
   }
   // (Re)install the pinned version if not already present. Idempotent: uv skips
   // if isotope-zero==pkgVer is already satisfied. The sentinel file lets us
@@ -129,14 +161,22 @@ export function venvPython() {
  * Returns { python: string, source: string } or throws { code, message }.
  */
 export function resolvePython(pkgVer) {
-  // 1. uv on PATH (or bootstrapped) → dedicated venv.
+  // 1. The venv from a previous run already satisfies pkgVer → reuse it as-is.
+  //    The venv is the durable home: even when uv isn't on PATH this run (and
+  //    bootstrap would need the network), a pre-built env is used with no
+  //    re-install. Probe FIRST so a healthy venv never pays for uv bootstrap.
+  if (hasIsotopeZero(venvPython(), pkgVer)) {
+    return { python: venvPython(), source: "uv-venv" };
+  }
+
+  // 2. uv on PATH (or bootstrapped) → build/refresh the dedicated venv.
   let uvBin = which("uv") || (process.env.UV_BIN && existsSync(process.env.UV_BIN) ? process.env.UV_BIN : null);
   if (!uvBin) uvBin = bootstrapUv();
   if (uvBin) {
     if (ensureUvVenv(uvBin, pkgVer)) {
       return { python: venvPython(), source: "uv-venv" };
     }
-    // uv venv build failed (e.g. pypi unreachable) → fall through to system python.
+    // uv venv build failed (e.g. pypi unreachable) → fall through.
   }
 
   // 3. System python3 with pip --user fallback.

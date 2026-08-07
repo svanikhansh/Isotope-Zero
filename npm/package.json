@@ -1,6 +1,6 @@
 {
   "name": "isotope-zero",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Global `izero` CLI launcher for isotope-zero — a sub-millisecond, local-first cognitive memory layer for AI agents. This npm package is a thin launcher that manages an isolated Python env and delegates to the Python `izero` CLI.",
   "type": "module",
   "bin": {
