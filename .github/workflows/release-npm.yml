@@ -25,7 +25,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"   # was "20" — Node 20 deprecated 2025-09-19, Actions forces Node 24
           registry-url: "https://registry.npmjs.org"
 
       - name: Install (no deps — launcher is pure stdlib)
@@ -41,3 +41,32 @@ jobs:
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Post-publish smoke: install the JUST-PUBLISHED npm package in a clean
+  # runner (no repo checkout) and assert the launcher runs. Catches a launcher
+  # that publishes but fails to resolve/run from the real npm registry — the gap
+  # that made "npm publish succeeded" ≠ "users can npm i -g izero" invisible.
+  smoke-npm:
+    name: Smoke (npm install + izero --version)
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install published package (retry for registry propagation)
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "Installing isotope-zero@$VER from npm"
+          # npm registry propagation can lag ~30-60s. Retry until the version
+          # appears, up to ~2 min, before failing.
+          for i in $(seq 1 12); do
+            if npm install -g "isotope-zero@$VER" 2>/dev/null; then
+              echo "installed on attempt $i"
+              break
+            fi
+            echo "version not yet on registry (attempt $i/12); waiting 10s"
+            sleep 10
+          done
+          izero --version
