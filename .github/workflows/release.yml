@@ -31,6 +31,7 @@ jobs:
   build-wheels:
     name: Build wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30   # fail fast on a hung build (QEMU aarch64 hung 3h+ across 5 runs)
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +95,42 @@ jobs:
           name: dist-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
 
+  # Linux aarch64 (arm64) via GitHub's NATIVE ubuntu-24.04-arm runner — NOT QEMU
+  # emulation. The v1.0.0 QEMU cross-compile (commit 8645edd) hung past 3h across
+  # five runs with zero convergence; a native ARM runner builds aarch64-manylinux
+  # in minutes (same as x86_64). This is an investigation-first job: it is
+  # ALLOWED TO FAIL without blocking the publish of the working x86_64/macos/
+  # windows wheels — arm64 users today fall back to the sdist or the macOS arm64
+  # wheel. If it converges, a real aarch64-manylinux wheel ships; if it doesn't,
+  # the timeout bounds it and docs/architecture.md records the measured reason.
+  build-wheels-arm:
+    name: Build wheels (linux aarch64, native ARM)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    continue-on-error: true   # informational; never block the publish on the arm wheel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build aarch64 wheel (cibuildwheel, maturin PyO3, native — no QEMU)
+        uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_BUILD_FRONTEND: pip
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_SKIP: "*-musllinux* *i686*"
+          # Native aarch64 on the arm runner — no cross-compile, no QEMU.
+          CIBW_ARCHS_LINUX: aarch64
+          CIBW_ENVIRONMENT_LINUX: "PYO3_NO_PYTHON=1"
+          CIBW_TEST_COMMAND: "python -c \"import isotope_zero; import isotope_zero._native; print(isotope_zero.__version__)\""
+
+      - uses: actions/upload-artifact@v4
+        if: always()   # upload whatever built (or empty) so publish doesn't wait on a never-run job
+        with:
+          name: dist-wheels-linux-aarch64
+          path: wheelhouse/*.whl
+
   publish:
     name: Publish to PyPI + GitHub Release
     needs: [build-sdist, build-wheels]
@@ -119,7 +156,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1.14.2   # pinned tag (was floating release/v1) — supply-chain reproducibility
         # Trusted publishing (OIDC) is the default: with id-token: write
         # granted above and no `password` set, the action mints a short-lived
         # token from PyPI — no long-lived secret to rotate. PYPI_API_TOKEN is
@@ -140,3 +177,50 @@ jobs:
         with:
           generate_release_notes: true
           files: dist/*
+
+  # Post-publish smoke: install the JUST-PUBLISHED version in a clean runner
+  # (no checkout of the repo) and assert it imports + the native ext loads.
+  # CIBW_TEST_COMMAND (build-time) asserts the wheel imports in the BUILD env,
+  # but not the PUBLISHED artifact on the real index post-propagation. This job
+  # catches a broken wheel/sdist that builds but fails to install from PyPI —
+  # the gap that made "release succeeded" ≠ "users can pip install" invisible.
+  smoke-pypi:
+    name: Smoke (pip install + import published wheel)
+    needs: publish
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Smoke on all three shipped platforms — a wheel that builds on one OS
+        # but has a broken native lib on another is exactly the gap this catches.
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install published wheel (retry for index propagation lag)
+        shell: bash
+        run: |
+          # Tag → version: strip the leading 'v'. 'v1.2.0' → '1.2.0'.
+          VER="${GITHUB_REF_NAME#v}"
+          echo "Installing isotope-zero==$VER from PyPI"
+          # PyPI index propagation can lag ~30-60s after publish completes. Retry
+          # the install until the version appears, up to ~2 min, before failing.
+          for i in $(seq 1 12); do
+            if pip install --no-cache-dir "isotope-zero==$VER"; then
+              echo "installed on attempt $i"
+              break
+            fi
+            echo "version not yet on index (attempt $i/12); waiting 10s"
+            sleep 10
+          done
+          # Final assert: the install actually succeeded.
+          python -c "import isotope_zero; print('import OK', isotope_zero.__version__)"
+      - name: Smoke — import + native ext + version matches tag
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python -c "import isotope_zero, isotope_zero._native; \
+                     assert isotope_zero.__version__ == '$VER', \
+                     f'version mismatch: {isotope_zero.__version__} != $VER'; \
+                     print('smoke OK', isotope_zero.__version__)"

@@ -421,6 +421,19 @@ class MemoryStore:
                 # here: the read path holds the store lock and result sorts
                 # are bounded by match set size, not DB size.
                 cur.execute("PRAGMA temp_store = MEMORY;")
+                # Wait out transient cross-process write locks instead of
+                # failing BEGIN IMMEDIATE instantly. Harmless under the
+                # threading.Lock (in-process work is already serialized on
+                # self._lock); the store's connection still competes with
+                # EXTERNAL writers sharing this WAL file (e.g. a parent-side
+                # consolidator in a different process), so this is the correct
+                # cross-process contention behavior — mirrors the busy_timeout
+                # the warfare test already pins on every external connection
+                # (test_concurrency_stress.py:593-599). Without it, a contended
+                # BEGIN IMMEDIATE in consolidate_memories raises
+                # 'database is locked' instantly and the rollback handler
+                # double-faults with 'cannot rollback - no transaction is active'.
+                cur.execute("PRAGMA busy_timeout = 5000;")
             except sqlite3.OperationalError:
                 pass  # PRAGMA rejected by an unusual build — silently skip.
             cur.execute(
@@ -1068,7 +1081,19 @@ class MemoryStore:
                     deleted += cur.rowcount
                 cur.execute("COMMIT;")
             except Exception:
-                cur.execute("ROLLBACK;")
+                # A failed BEGIN IMMEDIATE ("database is locked") leaves NO
+                # transaction open in autocommit mode (isolation_level=None),
+                # so ROLLBACK would raise a MASKING secondary error
+                # ('cannot rollback - no transaction is active') — the exact
+                # double-fault caught by
+                # test_multiprocess_contention_zero_errors_with_busy_timeout.
+                # Only roll back if we actually began; otherwise just re-raise
+                # the original error so the caller sees the real cause.
+                if self._conn.in_transaction:
+                    try:
+                        cur.execute("ROLLBACK;")
+                    except sqlite3.OperationalError:
+                        pass  # best-effort; the original error is what matters
                 raise
             finally:
                 cur.close()

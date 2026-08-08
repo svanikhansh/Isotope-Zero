@@ -452,6 +452,42 @@ npx izero-cli --help       # one-off, no global install
 (`<owner>` is a placeholder for the publishing org — do not treat the curl URL
 as a live address.)
 
+#### Wheel matrix + release pipeline (the honest record)
+
+Three wheel platforms ship on every `v*` tag: `linux x86_64`, `macOS x86_64+arm64`
+(universal2), and `windows AMD64` — all via `cibuildwheel` + maturin PyO3 abi3.
+**Linux aarch64 is a known gap with a measured reason.**
+
+- **v1.0.0:** aarch64 was attempted via QEMU cross-compile emulation. It hung
+  past **3 hours across five consecutive runs with zero convergence** (x86_64
+  builds natively in minutes). QEMU emulates the full aarch64 toolchain under
+  x86_64, so the Rust+numpy cross-compile is O(100×) slower and never converged
+  in CI's run budget. The job was killed; aarch64 was **deliberately omitted**
+  from v1.0.0 with this reason recorded here, not silently dropped. arm64 Linux
+  users fall back to `pip install` from the sdist or the macOS arm64 wheel.
+- **Post-v1.0.0 (REROUTE Phase 1):** aarch64 is now attempted via GitHub's
+  **native `ubuntu-24.04-arm` (linux/arm64) runner** — real ARM hardware, no
+  QEMU emulation, so the build is expected to converge in minutes like x86_64.
+  This `build-wheels-arm` job is `continue-on-error` + `timeout-minutes: 30`:
+  if it converges, a real `aarch64-manylinux_2_28` wheel ships; if it does not,
+  the timeout bounds it at 30 min (not 3 h) and this record stays the source of
+  truth. The working x86_64/macos/windows publish path never waits on it.
+
+**Post-publish smoke** (REROUTE Phase 1): every release now runs a
+`smoke-pypi` job (pip-installs the *just-published* version in a clean runner
+on all three shipped platforms and asserts `import isotope_zero` +
+`isotope_zero._native` + version == tag) and a `smoke-npm` job
+(npm-installs the just-published launcher and runs `izero --version`). The
+build-time `CIBW_TEST_COMMAND` asserts the wheel imports in the *build*
+environment; the smoke job closes the gap between "wheel builds" and "users
+can install the published artifact from the real index." Both retry for
+~2 min to absorb PyPI/npm index propagation lag.
+
+**Supply-chain:** the PyPI publish action is pinned to a version tag
+(`pypa/gh-action-pypi-publish@v1.14.2`), not the floating `release/v1`
+branch, for reproducibility. PyPI uses OIDC trusted publishing (no
+long-lived `PYPI_API_TOKEN`); npm uses `NPM_TOKEN` + Sigstore provenance.
+
 ---
 
 ## 9. Cross-links
