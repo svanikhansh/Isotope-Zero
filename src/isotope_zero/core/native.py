@@ -101,14 +101,48 @@ def _stem(tok: str) -> str:
     """Crude suffix stemmer for negation comparison only.
 
     Strips a trailing 'ing'/'ed'/'es'/'s' so morphological variants of the
-    same verb ("uses"/"use"/"using") collapse to a common stem. Deliberately
-    crude — it is only used to judge polarity equality, never stored, and a
-    false collapse just means two negations are compared a little more
-    liberally (which errs toward caution: not-merging).
+    same verb ("uses"/"use"/"using") collapse to a common stem, and strips
+    surrounding punctuation so "east," equals "east". Two refinements over a
+    naive single-pass suffix strip:
+
+    * An ``es``-ending word strips only the ``s`` when the base ends in ``e``
+      ("compiles" → "compile", "uses" → "use", "rises" → "rise") and the
+      whole ``es`` otherwise ("goes" → "go"). A naive ``es``-first order
+      stems "compiles" → "compil" and misses the pair — a false negative
+      that would let opposite facts merge.
+    * A doubled final consonant left by ``ing``/``ed`` is collapsed
+      ("running" → "runn" → "run", "stopped" → "stopp" → "stop") so the
+      progressive/past forms meet the simple present.
+
+    Deliberately crude — it is only used to judge polarity equality, never
+    stored, and a false collapse just means two negations are compared a
+    little more liberally (which errs toward caution: not-merging).
     """
-    for suf in ("ing", "ed", "es", "s"):
+    tok = tok.strip(".,;:!?()[]{}\"'`’")
+    if not tok:
+        return tok
+    # 'es' endings: prefer stripping only the 's' when it leaves a base that
+    # ends in 'e' (compile+s, use+s, rise+s); otherwise it is a true '-es'
+    # plural/third-person suffix (go+es, watch+es) and both letters go.
+    if tok.endswith("es") and len(tok) - 1 >= 3:
+        s_base = tok[:-1]
+        if s_base.endswith("e"):
+            return s_base
+        es_base = tok[:-2]
+        if len(es_base) >= 2 and es_base[-1] == es_base[-2]:
+            es_base = es_base[:-1]
+        return es_base
+    # Progressive / past suffixes, with doubled-consonant collapse.
+    for suf in ("ing", "ed"):
         if tok.endswith(suf) and len(tok) - len(suf) >= 3:
-            return tok[: -len(suf)]
+            base = tok[: -len(suf)]
+            if len(base) >= 2 and base[-1] == base[-2]:
+                base = base[:-1]
+            return base
+    # Bare trailing 's' (not 'ss'/'is'/'es', which are handled above / are
+    # their own roots): "runs" → "run", "cats" → "cat".
+    if tok.endswith("s") and not tok.endswith(("ss", "is")) and len(tok) - 1 >= 3:
+        return tok[:-1]
     return tok
 
 
@@ -118,7 +152,16 @@ def _are_negations_py(a: str, b: str) -> bool:
     True if `a` and `b` assert opposite polarities of the same fact:
     after removing negation markers from both sides, exactly one side
     originally contained a negation AND the denegated token sets overlap
-    highly (>= 0.6 Jaccard after a crude stem).
+    heavily (>= 0.6 Jaccard after a crude stem) AND each side adds at most
+    one token the other lacks.
+
+    The one-token symmetric-difference bound excludes transition-corrections
+    ("X runs on K8s" vs "X no longer runs on K8s; it runs on Nomad" denegates
+    to sets differing by {it, nomad}, two tokens) so they merge as superseding
+    facts instead of being kept as opposite polarities. Bare negations differ
+    only by the marker's consumed copula (<= 1 token) and pass. See
+    consolidation._are_negations for the full rationale (these two stay
+    byte-for-byte in sync).
     """
     if not a or not b:
         return False
@@ -132,7 +175,9 @@ def _are_negations_py(a: str, b: str) -> bool:
     sb = {_stem(t) for t in tb.split()}
     if not sa or not sb:
         return False
-    return len(sa & sb) / len(sa | sb) >= 0.6
+    if len(sa & sb) / len(sa | sb) < 0.6:
+        return False
+    return len(sa - sb) <= 1 and len(sb - sa) <= 1
 
 
 def are_negations(a: str, b: str) -> bool:

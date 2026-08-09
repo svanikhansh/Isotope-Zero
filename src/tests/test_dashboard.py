@@ -42,9 +42,17 @@ def _add(main_fn, capsys, db_path: str, fact: str) -> None:
 # 1. --once on an empty :memory: store
 # --------------------------------------------------------------------------- #
 def test_dashboard_once_empty(capsys):
-    """``dashboard --once`` on the default empty :memory: store exits 0 and
-    the frame reports 0 cards, the embedding mode, and a vitality line."""
-    rc, out, err = run(main, ["dashboard", "--once"], capsys)
+    """``dashboard --once`` on an explicit empty :memory: store exits 0 and
+    the frame reports 0 cards, the embedding mode, and a vitality line.
+
+    Passes ``--db :memory:`` explicitly so the test is hermetic: without it
+    ``_resolve_db_path`` returns the user's real default store when
+    ``~/.isotope_zero/isotope_zero.db`` exists, and this test would then
+    render whatever cards are on this machine (env contamination).
+    """
+    rc, out, err = run(
+        main, ["dashboard", "--once", *db_arg(":memory:")], capsys
+    )
     assert rc == 0, f"dashboard --once failed rc={rc} err={err!r} out={out!r}"
     assert "isotope_zero" in out, f"frame must carry the panel title, got {out!r}"
     assert "cards: 0" in out, f"empty store must show 0 cards, got {out!r}"
