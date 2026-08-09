@@ -1,7 +1,13 @@
 name: Release
 
-# Builds + publishes wheels and an sdist to PyPI whenever a `v*` tag is
-# pushed. Main-branch pushes never publish.
+# Builds + publishes a pure-Python wheel and an sdist to PyPI whenever a `v*`
+# tag is pushed. Main-branch pushes never publish.
+#
+# v1.3.0: the Rust native extension was removed and the build backend switched
+# from maturin to setuptools. The wheel is now a single pure-Python
+# `py3-none-any` artifact — no cibuildwheel, no per-OS/per-abi matrix, no Rust
+# cross-compile, no QEMU aarch64 gap (the universal wheel covers aarch64). One
+# `build` job replaces the old build-sdist + build-wheels + build-wheels-arm.
 on:
   push:
     tags:
@@ -11,135 +17,47 @@ permissions:
   contents: write   # to create the GitHub Release + attach artifacts
 
 jobs:
-  build-sdist:
-    name: Build sdist
+  build:
+    name: Build pure-Python wheel + sdist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install build frontend
         run: python -m pip install --upgrade pip build
-      - name: Build sdist
-        run: python -m build --sdist --outdir dist
+      - name: Build wheel + sdist
+        # `python -m build` produces both the sdist (.tar.gz) and a universal
+        # pure-Python wheel (.whl, tagged py3-none-any) — no native compilation,
+        # so a single Linux runner covers every target platform + Python minor.
+        run: python -m build --outdir dist
+      - name: Verify the wheel is pure-Python (no native extension)
+        # Regression guard for the v1.3.0 removal: the wheel must contain NO
+        # .so/.pyd/.dylib and NO rust_bridge/ artifact. A native artifact here
+        # would mean the build accidentally re-introduced a compiled extension.
+        run: |
+          set -e
+          if unzip -l dist/*.whl | grep -E '\.(so|pyd|dylib)$|rust_bridge'; then
+            echo "::error::wheel contains a native extension or rust_bridge artifact — expected pure Python"
+            exit 1
+          fi
+          echo "wheel is pure-Python (no .so/.pyd/.dylib, no rust_bridge) — OK"
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-sdist
-          path: dist/*.tar.gz
-
-  build-wheels:
-    name: Build wheels (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30   # fail fast on a hung build (QEMU aarch64 hung 3h+ across 5 runs)
-    strategy:
-      fail-fast: false
-      matrix:
-        # PyO3 abi3 → one wheel per (cp310 | cp311 | cp312) minor per platform.
-        # cibuildwheel selects the abi3 target via CIBW_BUILD below.
-        os: [ubuntu-latest, macos-14, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build wheels (cibuildwheel, maturin PyO3)
-        uses: pypa/cibuildwheel@v4.2.0
-        env:
-          # maturin is installed from [build-system] requires; abi3 → one
-          # wheel per (cp310 | cp311 | cp312) minor per platform.
-          CIBW_BUILD_FRONTEND: pip
-          CIBW_BUILD: "cp310-* cp311-* cp312-*"
-          CIBW_SKIP: "*-musllinux* *i686* *-win32"
-          CIBW_ARCHS_LINUX: x86_64
-          CIBW_ARCHS_MACOS: x86_64 arm64
-          CIBW_ARCHS_WINDOWS: AMD64
-          # manylinux baseline: cibuildwheel 4.x defaults to manylinux_2_28
-          # (PEP 600) — manylinux2014 (PEP 599) images are EOL and removed
-          # from quay.io. The 2_28 image ships GCC 12 (numpy's ">=10.3" build
-          # requirement) and CPython 3.10+. No explicit CIBW_MANYLINUX_*_IMAGE
-          # override: the action's paired default is the image it expects, and
-          # pinning a dated tag breaks when the `latest` rebuild drops
-          # interpreters (cibuildwheel 2.21 + cp38-removed image failed with
-          # "env: '/opt/python/cp38-cp38/bin/python': No such file or directory").
-          # Linux aarch64 is omitted from v1.0.0: cibuildwheel builds it under
-          # QEMU emulation, and the Rust+numpy cross-compile hung past 3h with
-          # zero convergence across five runs (x86_64 builds natively in
-          # minutes). aarch64-manylinux wheels are a post-1.0 enhancement;
-          # arm64 users fall back to `pip install` from sdist or the macOS
-          # arm64 wheel. Linux x86_64 (the overwhelming majority of installs)
-          # is the must-have and ships now.
-          # Per-OS Rust cross-compile targets cibuildwheel needs before maturin
-          # can build the abi3 extension. (The global form failed macos-14:
-          # x86_64-apple-darwin was never added, so rustc had no core stdlib
-          # for the x86_64 slice -> error[E0463].)
-          CIBW_BEFORE_BUILD_LINUX: "rustup target add x86_64-unknown-linux-gnu || true"
-          CIBW_BEFORE_BUILD_MACOS: "rustup target add x86_64-apple-darwin aarch64-apple-darwin || true"
-          # abi3 cross-build: don't link against libpython. The manylinux2014
-          # images ship no static libpython3.x.a, and with extension-module the
-          # symbols resolve from the importing CPython. Mirrors the pyo3
-          # documented flag for abi3-only builds.
-          CIBW_ENVIRONMENT_LINUX: "PYO3_NO_PYTHON=1"
-          # macos: rustc defaults the binary's min-macOS to the runner SDK
-          # (macos-14 ≈ 14.x), but cibuildwheel tags the wheel at 10.9 by
-          # default -> delocate fails ("Library dependencies do not satisfy
-          # target MacOS version 10.9"). Pin one target for both the wheel tag
-          # and the Rust compile so they agree. 10.15 is above rustc's minimum
-          # supported macOS (10.12) and a sane floor for a 2026 release.
-          CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=10.15"
-          CIBW_TEST_COMMAND: "python -c \"import isotope_zero; import isotope_zero._native; print(isotope_zero.__version__)\""
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
-
-  # Linux aarch64 (arm64) via GitHub's NATIVE ubuntu-24.04-arm runner — NOT QEMU
-  # emulation. The v1.0.0 QEMU cross-compile (commit 8645edd) hung past 3h across
-  # five runs with zero convergence; a native ARM runner builds aarch64-manylinux
-  # in minutes (same as x86_64). This is an investigation-first job: it is
-  # ALLOWED TO FAIL without blocking the publish of the working x86_64/macos/
-  # windows wheels — arm64 users today fall back to the sdist or the macOS arm64
-  # wheel. If it converges, a real aarch64-manylinux wheel ships; if it doesn't,
-  # the timeout bounds it and docs/architecture.md records the measured reason.
-  build-wheels-arm:
-    name: Build wheels (linux aarch64, native ARM)
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
-    continue-on-error: true   # informational; never block the publish on the arm wheel
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build aarch64 wheel (cibuildwheel, maturin PyO3, native — no QEMU)
-        uses: pypa/cibuildwheel@v4.2.0
-        env:
-          CIBW_BUILD_FRONTEND: pip
-          CIBW_BUILD: "cp310-* cp311-* cp312-*"
-          CIBW_SKIP: "*-musllinux* *i686*"
-          # Native aarch64 on the arm runner — no cross-compile, no QEMU.
-          CIBW_ARCHS_LINUX: aarch64
-          CIBW_ENVIRONMENT_LINUX: "PYO3_NO_PYTHON=1"
-          CIBW_TEST_COMMAND: "python -c \"import isotope_zero; import isotope_zero._native; print(isotope_zero.__version__)\""
-
-      - uses: actions/upload-artifact@v4
-        if: always()   # upload whatever built (or empty) so publish doesn't wait on a never-run job
-        with:
-          name: dist-wheels-linux-aarch64
-          path: wheelhouse/*.whl
+          name: dist
+          path: dist/*
 
   publish:
     name: Publish to PyPI + GitHub Release
-    needs: [build-sdist, build-wheels]
+    needs: [build]
     runs-on: ubuntu-latest
     environment: pypi
     # Job-scoped permissions: OIDC trusted publishing needs id-token: write to
     # mint a short-lived API token from PyPI. contents: write attaches the
-    # built wheels to the GitHub Release. (Kept job-local so the wheel-build
-    # jobs stay least-privilege with only the workflow-wide contents: write.)
+    # built wheel + sdist to the GitHub Release. (Kept job-local so the build
+    # job stays least-privilege with only the workflow-wide contents: write.)
     permissions:
       id-token: write
       contents: write
@@ -159,17 +77,17 @@ jobs:
         uses: pypa/gh-action-pypi-publish@v1.14.2   # pinned tag (was floating release/v1) — supply-chain reproducibility
         # Trusted publishing (OIDC) is the default: with id-token: write
         # granted above and no `password` set, the action mints a short-lived
-        # token from PyPI — no long-lived secret to rotate. PYPI_API_TOKEN is
+        # token from PyPI. PYPI_API_TOKEN (an optional repo secret) is kept as
         # an optional fallback for accounts that prefer an API token; when the
         # secret is absent the empty default keeps OIDC as the active path.
         with:
           password: ${{ secrets.PYPI_API_TOKEN || '' }}
           # skip-existing: idempotent re-runs. PyPI rejects re-uploads of files
           # already published for an immutable version with 400 "File already
-          # exists" — a re-run after a partial publish (e.g. sdist failed but
-          # wheels landed) would otherwise abort on the first wheel before
-          # reaching the still-missing artifact. With skip-existing, already-
-          # published files are no-ops and only missing ones upload.
+          # exists" — a re-run after a partial publish would otherwise abort on
+          # the first file before reaching the still-missing artifact. With
+          # skip-existing, already-published files are no-ops and only missing
+          # ones upload.
           skip-existing: true
 
       - name: Create GitHub Release with artifacts
@@ -179,11 +97,12 @@ jobs:
           files: dist/*
 
   # Post-publish smoke: install the JUST-PUBLISHED version in a clean runner
-  # (no checkout of the repo) and assert it imports + the native ext loads.
-  # CIBW_TEST_COMMAND (build-time) asserts the wheel imports in the BUILD env,
-  # but not the PUBLISHED artifact on the real index post-propagation. This job
-  # catches a broken wheel/sdist that builds but fails to install from PyPI —
-  # the gap that made "release succeeded" ≠ "users can pip install" invisible.
+  # (no checkout of the repo) and assert it imports + the version matches the
+  # tag. v1.3.0: there is no native extension to import, so the smoke checks
+  # the pure-Python import + version only (the build job's verify step already
+  # asserts the wheel is native-free). This job catches a broken wheel/sdist
+  # that builds but fails to install from PyPI — the gap that made "release
+  # succeeded" ≠ "users can pip install" invisible.
   smoke-pypi:
     name: Smoke (pip install + import published wheel)
     needs: publish
@@ -191,8 +110,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Smoke on all three shipped platforms — a wheel that builds on one OS
-        # but has a broken native lib on another is exactly the gap this catches.
+        # Smoke on all three supported platforms — a wheel that installs on
+        # one OS but fails to import on another is exactly the gap this catches.
         os: [ubuntu-latest, macos-14, windows-latest]
     steps:
       - uses: actions/setup-python@v5
@@ -201,7 +120,7 @@ jobs:
       - name: Install published wheel (retry for index propagation lag)
         shell: bash
         run: |
-          # Tag → version: strip the leading 'v'. 'v1.2.0' → '1.2.0'.
+          # Tag → version: strip the leading 'v'. 'v1.3.0' → '1.3.0'.
           VER="${GITHUB_REF_NAME#v}"
           echo "Installing isotope-zero==$VER from PyPI"
           # PyPI index propagation can lag ~30-60s after publish completes. Retry
@@ -216,11 +135,11 @@ jobs:
           done
           # Final assert: the install actually succeeded.
           python -c "import isotope_zero; print('import OK', isotope_zero.__version__)"
-      - name: Smoke — import + native ext + version matches tag
+      - name: Smoke — import + version matches tag
         shell: bash
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          python -c "import isotope_zero, isotope_zero._native; \
+          python -c "import isotope_zero; \
                      assert isotope_zero.__version__ == '$VER', \
                      f'version mismatch: {isotope_zero.__version__} != $VER'; \
                      print('smoke OK', isotope_zero.__version__)"

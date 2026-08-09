@@ -1,5 +1,19 @@
 """Scale-adaptive vector search dispatcher.
 
+v1.3.0 STATUS
+-------------
+The shipped Rust crate was REMOVED in v1.3.0; the package is now a pure-Python
+wheel. The int8 NEON kernel (``simd_int8_batch_dot``) was a prototype-only
+artifact (``prototypes/simd_int8_v0.5``) that was never compiled into the
+wheel, so for a pip-installed user ``self._kernel`` is always None and the
+dispatch routes every N to the zero-copy NumPy/BLAS path — NOT the slow numpy
+int8 oracle (which is SLOWER than BLAS at every scale; see "HONEST ZERO-ALLOC
+FRAMING" below). The crossover table below remains a valid measurement record
+of what the NEON kernel achieved on a developer box with the prototype .so
+wired in via ``IZERO_INT8_NATIVE_SO``; it does NOT describe what a pip user
+observes. The hysteresis + int8 buffers are retained as the research substrate
+for a future shipped-kernel decision.
+
 THESIS
 ------
 A single vector store can serve the regime where a small int8 SIMD dot kernel
@@ -85,21 +99,25 @@ from typing import Any, Callable
 log = logging.getLogger("adaptive_search")
 
 # --- Optional int8 SIMD kernel discovery -------------------------------------
-# The shipped ``isotope_zero._native`` extension (compiled by maturin from
-# ``rust_bridge/``) provides the *float32* BLAS path; it does NOT provide the
-# int8 ``simd_int8_batch_dot`` kernel. That int8 kernel lives in the research
-# prototype ``prototypes/simd_int8_v0.5`` and is a separate PyO3 contract.
+# v1.3.0: the shipped Rust crate (``rust_bridge/``, compiled by maturin into
+# ``isotope_zero._native``) was REMOVED — the package is now a pure-Python
+# wheel. That crate only ever provided the *float32* parity probes anyway; the
+# int8 ``simd_int8_batch_dot`` kernel was never in it. The int8 kernel lives
+# in the research prototype ``prototypes/simd_int8_v0.5`` as a frozen artifact
+# and is a separate PyO3 contract.
 #
-# For a distributed package we cannot rely on a developer-local absolute path,
-# so we look the .so up via three portable mechanisms, in order:
+# For a pip-installed user there is therefore no int8 .so to discover, and the
+# dispatcher routes to the zero-copy NumPy/BLAS path at every N (see the
+# ``search`` dispatch -- the int8 path is forced to BLAS when ``_kernel`` is
+# None, because the numpy int8 fallback is a correctness oracle that is SLOWER
+# than BLAS at every scale). A developer who wants to re-measure the NEON
+# small-N speedup can still wire the prototype .so in via:
 #   1. IZERO_INT8_NATIVE_SO env var (explicit override).
-#   2. A sibling file next to this package's install location (so a wheel that
-#      bundles the int8 extension discovers it automatically).
+#   2. A sibling file next to this package's install location.
 #   3. The in-repo research path, resolved relative to the package root, for
 #      editable/development installs.
-# If none resolves to a real file, the int8 path degrades to the numpy fallback
-# (documented below) -- the dispatcher still works, just without the NEON
-# speedup at small N.
+# If one resolves to a real file, ``_kernel`` is non-None and the int8 fast
+# path is honored; otherwise it degrades to BLAS (NOT the slow numpy oracle).
 import os as _os
 
 _NATIVE_SO_PATH: str | None = _os.environ.get("IZERO_INT8_NATIVE_SO") or None
@@ -412,6 +430,20 @@ class AdaptiveVectorSearch:
             else:
                 path = self._path  # hysteresis: keep the latched path
             self._path = path  # latch
+
+            # v1.3.0: the int8 NEON kernel was a prototype-only artifact
+            # (prototypes/simd_int8_v0.5) that never shipped in the wheel, so
+            # ``self._kernel`` is None for every install. Routing to the int8
+            # path in that case would hit ``int8_dot_numpy`` — a no-SIMD
+            # int8→int32 upcast that is SLOWER than BLAS at every scale (see the
+            # module docstring). Force BLAS whenever there is no real native
+            # kernel, so pip users always get the zero-copy BLAS path instead of
+            # the slow correctness oracle. (If a developer has wired the
+            # prototype .so in via IZERO_INT8_NATIVE_SO, _kernel is non-None and
+            # the int8 fast path is honored as before.)
+            if path == "int8" and self._kernel is None:
+                path = "blas"
+                self._path = path
 
             if path == "blas":
                 # Zero-alloc dot: np.dot(matrix, query, out=_scores[:n]).

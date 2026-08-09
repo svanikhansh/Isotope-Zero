@@ -25,14 +25,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install Rust toolchain (for the _native extension)
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install package with dev dependencies
-        # maturin builds the PyO3 _native extension as part of the editable
-        # install. If the build is unavailable in a sandbox, the pure-Python
-        # Smart Bridge (core/native.py, HAVE_NATIVE=False) keeps the suite
-        # green — only the Rust accelerator is lost.
+        # v1.3.0: pure-Python wheel (the Rust _native extension was removed;
+        # setuptools is the build backend). No native build, no Rust toolchain
+        # — the install is a plain pip editable install, faster and with no
+        # C-toolchain risk on Windows (the concurrency-sensitive platform).
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
@@ -60,7 +57,6 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - uses: dtolnay/rust-toolchain@stable
       - name: Install package with all optional backends
         run: |
           python -m pip install --upgrade pip

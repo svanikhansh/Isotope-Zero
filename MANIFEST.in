@@ -1,0 +1,12 @@
+# MANIFEST.in — controls what ships in the sdist (the wheel is driven by
+# pyproject [tool.setuptools] / data-files). v1.3.0 switched the build backend
+# from maturin to setuptools (the Rust native core was removed; the wheel is
+# now pure-Python). These entries keep the non-Python data shipping intact.
+include LICENSE
+include README.md
+include CHANGELOG.md
+# Editor-integration plugin bundle (Claude Code / Cursor / Codex). Lives at the
+# repo root under integrations/izero-plugin/ and is placed at the wheel root via
+# [tool.setuptools.data-files]; this recursive-include ensures the sdist carries
+# it too so `izero plugin install` works from an sdist install.
+recursive-include integrations/izero-plugin *

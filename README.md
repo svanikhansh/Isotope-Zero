@@ -52,7 +52,7 @@ competitor figures are vendor-stated or audit-derived and marked as such.
 | **Dependency weight** | **1 hard** dep (numpy); sqlite3 is stdlib | 150+ packages | client SDK only (index is remote) |
 | **Network calls (core ops)** | **0** | every add/search | every add/search |
 | **Inference cost** | **$0** (local quantized ONNX) | per-call embedding API bill | per-call embedding + storage bill |
-| **Fact reconciliation** | negation-aware (22 Rust patterns) + semantic consolidation + decay prune | V3 additive extraction (LLM) + MD5 dedup | n/a (vector DB only) |
+| **Fact reconciliation** | negation-aware (22 patterns) + semantic consolidation + decay prune | V3 additive extraction (LLM) + MD5 dedup | n/a (vector DB only) |
 | **Temporal forgetting** | **Ebbinghaus decay, built-in** | none (manual) | none |
 | **Knowledge compaction** | **consolidate() — 98.5% reduction (measured)** | additive only | none |
 | **Multi-tenancy** | multi-tier `scope=` row isolation | payload metadata filtering (user/agent/run) | namespace-per-tenant |
@@ -219,7 +219,7 @@ Three channels. Pick one.
 
 ```bash
 git clone https://github.com/<owner>/isotope_zero.git && cd isotope_zero
-pip install -e ".[dev]"     # builds the Rust _native extension via maturin
+pip install -e ".[dev]"     # pure-Python install (setuptools; no Rust toolchain needed)
 ```
 
 **B. Universal installer (end users):** an idempotent `curl | sh` script that writes only to
@@ -253,6 +253,15 @@ runs and returns to the menu. Arrow-key navigation needs the optional `rich`
 (`pip install isotope-zero[dashboard]`); without it the menu falls back to a
 numbered list that works in every terminal. Direct `izero <command> ...` still
 works unchanged for scripts and power users.
+
+**Clean output by default; `--json` for machines, `--verbose` for power users.**
+`izero add`, `recall`, `search`, `list`, `get`, `active`, `stats`, and `tags`
+print the **fact text first** — a `✓ remembered` confirmation, a numbered list of
+facts, a one-line store summary — not uuid columns, score floats, or
+`=== banner ===` chrome. `izero <cmd> --json` keeps the full, stable machine
+contract (the source of truth for scripts/SDK/MCP). `izero <cmd> --verbose`
+restores the pre-redesign aligned technical columns (id, score, age, vitality)
+when you want them.
 
 ```python
 from isotope_zero.client import IsotopeZero

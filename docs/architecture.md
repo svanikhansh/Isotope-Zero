@@ -71,6 +71,21 @@ incorrect**, SQL **0.66 ms** PASS. This became *the* shipped baseline — and th
 number every storage-tier optimization had to beat, which turned out to be the
 bar that killed Phases 3–5 and 7B. See `prototypes/rust_v0.2/README.md`.
 
+> **v1.3.0 superseding note.** The Rust `isotope_zero._native` extension was
+> **removed** in v1.3.0 and the build backend switched from maturin to
+> setuptools. The empirical finding that motivated it — *the float32 vector
+> path already wins on zero-copy NumPy/BLAS* — held up under re-measurement:
+> BLAS is ~9–115× faster than the Rust extension's GIL-released
+> `batch_cosine_similarity_matrix`, which had to clone the matrix into owned
+> `Vec<f32>` (`PyReadonlyArray` borrows Python memory and is not `Send`). The
+> Rust `are_negations` port was bit-for-bit identical to the pure-Python
+> heuristic, so negation behavior is unchanged with the crate gone. What ships
+> now is the **same float32 BLAS vector path** plus the **pure-Python negation
+> heuristic** — the parts of the Smart Bridge that were never the bottleneck.
+> The crate, the maturin build, and the cibuildwheel cross-compile matrix were
+> all cost with no pip-user benefit (the int8 NEON fast path was prototype-only
+> and never compiled into the wheel). See `CHANGELOG.md` v1.3.0.
+
 ### Phase 3 — Method 1: BM25 + FTS5 pre-filter (`hybrid_v0.3`) — FAILED
 
 Hypothesis: an FTS5 BM25 pre-filter would shrink the candidate set before the
@@ -453,6 +468,18 @@ npx izero-cli --help       # one-off, no global install
 as a live address.)
 
 #### Wheel matrix + release pipeline (the honest record)
+
+> **v1.3.0 superseding note.** The wheel matrix below is the *historical*
+> record of the Rust/maturin era. In v1.3.0 the native extension was removed
+> and the build backend switched to setuptools, so the wheel is now a single
+> **universal `py3-none-any` artifact** built by one job on one Linux runner.
+> cibuildwheel, the per-OS/per-abi matrix, and the PyO3 abi3 cross-compile are
+> all gone. The **Linux aarch64 gap is closed for free**: a pure-Python
+> universal wheel installs natively on aarch64 Linux (and everywhere else) with
+> no compilation, no QEMU, no native runner. The sdist + wheel are built by
+> `python -m build`; a verify step asserts the wheel contains no `.so`/`.pyd`/
+> `.dylib` and no `rust_bridge/` artifact. See `CHANGELOG.md` v1.3.0 and
+> `.github/workflows/release.yml`.
 
 Three wheel platforms ship on every `v*` tag: `linux x86_64`, `macOS x86_64+arm64`
 (universal2), and `windows AMD64` — all via `cibuildwheel` + maturin PyO3 abi3.

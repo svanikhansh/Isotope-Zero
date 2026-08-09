@@ -1,57 +1,43 @@
-"""Smart Bridge between the pure-Python v0.1 engine and the Rust native core.
+"""Vector + negation kernels for the isotope_zero retrieval / triage paths.
 
-Phase 6 places each workload on its empirically-fastest path:
+As of v1.3.0 the package ships a **pure-Python wheel** — there is no Rust
+native extension. Both workloads that once had a Rust fast path now run
+entirely in Python, with no behavior change for any caller:
 
 * **Vector dot-products** run on **NumPy/BLAS** (``matrix @ query``). BLAS
   operates zero-copy on the numpy buffers and releases the GIL around the C
-  kernel; the Rust extension's ``batch_cosine_similarity_matrix`` has to clone
-  the matrix into owned ``Vec<f32>`` to release the GIL (``PyReadonlyArray``
-  borrows Python memory and is not ``Send``), which is ~9-115x slower. So the
-  float32 cosine workload stays where it already wins.
-* **Negation / polarity detection** runs on the **Rust native core**
-  (``isotope_zero._native.are_negations``): a bit-for-bit port of the v0.1
-  heuristic, compiled and GIL-released, with a clean pure-Python fallback.
+  kernel — measured ~9-115x faster than the Rust extension's
+  ``batch_cosine_similarity_matrix``, which has to clone the matrix into
+  owned ``Vec<f32>`` to release the GIL (``PyReadonlyArray`` borrows Python
+  memory and is not ``Send``). The float32 cosine workload always won on
+  NumPy/BLAS, so removing the Rust path loses nothing here.
+* **Negation / polarity detection** runs on the **pure-Python heuristic**
+  (``_are_negations_py``): a verbatim copy of the v0.1 reference logic. The
+  Rust ``are_negations`` port was bit-for-bit identical, so output is
+  unchanged whether or not a native module was ever present.
 
-The bridge is designed so that a **missing, half-built, or ABI-mismatched**
-native module can never break the package:
-
-* Import of ``isotope_zero._native`` is wrapped in a bare ``except`` that
-  swallows every failure (``ImportError``, ``AttributeError``, ``OSError``,
-  ``TypeError`` from a stale ABI, ...) and records the outcome in
-  ``HAVE_NATIVE``.
-* ``are_negations`` tries the native implementation first when ``HAVE_NATIVE``
-  is True and transparently falls back to the pure-Python equivalent on any
-  native failure.
-* The pure-Python fallbacks are exact copies of the v0.1 reference logic, so
-  negation behavior is bit-identical whether or not the native module loads.
-
-Native API contract (single source of truth, mirrored in src/lib.rs):
-
-    isotope_zero._native.batch_cosine_similarity(
-        query: Vec<f32>, matrix_flat: Vec<f32>, dim: usize) -> list[float]
-    isotope_zero._native.batch_cosine_similarity_matrix(
-        query: numpy (dim,) float32, matrix: numpy (n, dim) float32) -> list[float]
-    isotope_zero._native.are_negations(a: str, b: str) -> bool
-
-The vector functions exist for parity probes / future quantized-SIMD work but
-are NOT on the hot path; ``batch_cosine_similarity`` here always uses NumPy.
+``HAVE_NATIVE`` is retained as a module-level constant (always ``False``) for
+API stability — downstream adapters or user code may read it. The historic
+``isotope_zero._native`` extension (compiled by maturin from
+``rust_bridge/``) was removed in v1.3.0; the int8 NEON measurement that
+motivated it lives on as a frozen research artifact in
+``prototypes/simd_int8_v0.5``.
 """
 
 from __future__ import annotations
 
-try:  # noqa: E402  (import-time safety barrier is intentional)
-    from .. import _native  # type: ignore[import-not-found]
-
-    HAVE_NATIVE: bool = True
-except Exception:  # noqa: BLE001 — a broken native module must never break import
-    _native = None  # type: ignore[assignment]
-    HAVE_NATIVE = False
+# v1.3.0: the Rust ``isotope_zero._native`` extension was removed. There is no
+# native module to import; ``HAVE_NATIVE`` is a constant kept for API stability
+# (downstream code may branch on it). Negation now always runs the pure-Python
+# heuristic, which is byte-for-byte the v0.1 reference logic the Rust port
+# reproduced.
+HAVE_NATIVE: bool = False
 
 __all__ = ["HAVE_NATIVE", "batch_cosine_similarity", "are_negations"]
 
 
 # --------------------------------------------------------------------------- #
-# Vector path — NumPy/BLAS is the PRIMARY path (Smart Bridge)
+# Vector path — NumPy/BLAS is the (sole) path
 # --------------------------------------------------------------------------- #
 def batch_cosine_similarity(
     query_vec: "np.ndarray", matrix: "np.ndarray"
@@ -64,17 +50,13 @@ def batch_cosine_similarity(
     the caller is responsible for clipping to [0, 1] and top-k selection, so
     every path is semantically identical.
 
-    Smart Bridge routing (see Phase 6 report): the float32 batch dot-product
-    runs on the **NumPy/BLAS** path, not the Rust extension. ``matrix @ q``
-    calls into the platform BLAS (Accelerate on macOS) with **zero copy** of
-    the numpy buffers and releases the GIL around the C kernel — measured
-    ~9-115x faster than the Rust path, which had to clone the matrix into
-    owned ``Vec<f32>`` to release the GIL (PyReadonlyArray borrows Python
-    memory and is not ``Send``). Hand SIMD cannot beat zero-copy BLAS at
-    these sizes, so the vector workload stays on the path that already wins.
-
-    The Rust extension still exposes ``batch_cosine_similarity_matrix`` for
-    parity probes and future quantized-SIMD work; it is not on the hot path.
+    The float32 batch dot-product runs on **NumPy/BLAS**: ``matrix @ q``
+    calls into the platform BLAS (Accelerate on macOS, OpenBLAS elsewhere)
+    with **zero copy** of the numpy buffers and releases the GIL around the C
+    kernel. Hand SIMD cannot beat zero-copy BLAS at these sizes, so the
+    vector workload stays on the path that wins. (The historic Rust
+    ``batch_cosine_similarity_matrix`` parity probe was removed in v1.3.0
+    along with the crate; see the module docstring.)
     """
     import numpy as np
 
@@ -156,13 +138,9 @@ def _are_negations_py(a: str, b: str) -> bool:
 def are_negations(a: str, b: str) -> bool:
     """True if `a` and `b` assert opposite polarities of the same fact.
 
-    Tries ``_native.are_negations`` when the native module is present; on any
-    native failure (or when absent) falls back to the pure-Python heuristic,
-    which is byte-for-byte the v0.1 reference logic.
+    Runs the pure-Python heuristic (``_are_negations_py``), which is
+    byte-for-byte the v0.1 reference logic. The historic Rust
+    ``_native.are_negations`` port was bit-identical and was removed with the
+    crate in v1.3.0; callers see no behavior change.
     """
-    if HAVE_NATIVE:
-        try:
-            return bool(_native.are_negations(a, b))
-        except Exception:  # noqa: BLE001 — never propagate a native failure
-            pass
     return _are_negations_py(a, b)

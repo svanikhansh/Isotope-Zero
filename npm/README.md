@@ -13,7 +13,7 @@ izero --help
 
 ## Why an npm package?
 
-isotope-zero ships to [PyPI](https://pypi.org/project/isotope-zero/) as a Python package with a Rust native extension. The npm package lets you install and run the same `izero` CLI via npm, without touching your Python setup:
+isotope-zero ships to [PyPI](https://pypi.org/project/isotope-zero/) as a pure-Python package (NumPy/BLAS-accelerated, no compiled extension). The npm package lets you install and run the same `izero` CLI via npm, without touching your Python setup:
 
 ```bash
 npm install -g isotope-zero   # ← one command, works in any shell

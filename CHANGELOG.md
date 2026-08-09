@@ -12,6 +12,64 @@ zero-dependency paths that keep the package runnable with nothing installed).
 
 ---
 
+## [1.3.0] — Pure-Python wheel (Rust native core removed)
+
+The shipped Rust crate paid the full native-build cost (cibuildwheel ×3–4
+platforms, the aarch64 cross-compile gap, the pyo3/numpy version-pin surface)
+but delivered **no pip-user benefit**: the int8 NEON fast path was a
+prototype-only artifact (`prototypes/simd_int8_v0.5`) that was never compiled
+into the wheel, the two shipped cosine functions had zero call sites (the hot
+vector path already ran on zero-copy NumPy/BLAS), and the one live shipped
+function (`are_negations`) had a bit-identical pure-Python fallback. This
+release removes the crate and ships a **pure-Python wheel**.
+
+### Changed
+- **Build backend: maturin → setuptools.** `pyproject.toml` `[build-system]`
+  now requires `setuptools>=68` + `wheel`; the `[tool.maturin]` block is
+  replaced by `[tool.setuptools.packages.find]` + `data-files` (the editor
+  plugin bundle still ships at the wheel root for `izero plugin install`).
+  A `MANIFEST.in` carries the bundle + LICENSE into the sdist.
+- **`core/native.py` is pure-Python.** The `try: from .. import _native`
+  import-time barrier is gone; `HAVE_NATIVE` is a constant `False` (kept for
+  API stability — downstream code that branches on it still works).
+  `are_negations` now always runs `_are_negations_py` (byte-for-byte the v0.1
+  reference logic the Rust port reproduced). `batch_cosine_similarity` is
+  unchanged (it already ran `matrix @ q` on NumPy/BLAS).
+- **`engine/adaptive_search.py` perf-bug fix.** With no native kernel to
+  load, `self._kernel` is always `None`; the dispatcher now routes to the
+  zero-copy NumPy/BLAS path at **every N** instead of the
+  `int8_dot_numpy` correctness oracle for small N. The numpy int8 fallback is
+  a no-SIMD int8→int32 upcast that is *slower than BLAS at every scale*, so
+  this is a real fix for pip users at N≤2000 (the slow oracle was a latent
+  regression). The hysteresis + int8 buffers are retained as the research
+  substrate for a future shipped-kernel decision.
+- **CI.** `.github/workflows/ci.yml` drops the `dtolnay/rust-toolchain` steps
+  (no Rust toolchain needed — a plain `pip install -e ".[dev]"`).
+  `.github/workflows/release.yml` collapses `build-sdist` + `build-wheels` +
+  `build-wheels-arm` into one `build` job (`python -m build` → universal
+  `py3-none-any` wheel + sdist), with a verify step asserting the wheel is
+  native-free. `publish.needs` is now `[build]`.
+
+### Removed
+- **BREAKING: `isotope_zero._native`** — the Rust PyO3 extension (compiled
+  from `rust_bridge/`) no longer exists. Any code importing it directly must
+  switch to the pure-Python `isotope_zero.core.native` API
+  (`are_negations`, `batch_cosine_similarity`, `HAVE_NATIVE`). The Rust
+  sources (`src/isotope_zero/rust_bridge/`) are deleted.
+- The `"Programming Language :: Rust"` PyPI classifier.
+
+### Notes
+- The int8 NEON measurement record (`prototypes/simd_int8_v0.5`) is retained
+  as a frozen research artifact; a developer can still wire its `.so` in via
+  `IZERO_INT8_NATIVE_SO` to re-measure the small-N speedup.
+- Linux aarch64 is now served by the universal wheel (no QEMU, no native
+  runner) — the historical aarch64 gap is closed for free.
+- Behavior is **bit-identical** for every code path that mattered: cosine
+  scores (already NumPy/BLAS) and `are_negations` output (pure-Py == the Rust
+  port). No CLI/MCP/`--json` contract change.
+
+---
+
 ## [1.0.0] - 2026-08-05 — Grand Synthesis
 
 The synthesis release: every validated prototype phase is promoted into one

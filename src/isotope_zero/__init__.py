@@ -8,7 +8,7 @@ from __future__ import annotations
 from .types import ActionType, ActionResult, ConsolidationReport, MemoryCard, QueryHit, QueryResult, now_ts
 from .tokens import estimate_tokens
 
-__version__ = "1.1.1"
+__version__ = "1.3.0"
 
 __all__ = [
     "ActionType",
