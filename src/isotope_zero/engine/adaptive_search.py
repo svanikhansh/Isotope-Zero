@@ -70,11 +70,9 @@ HONEST ZERO-ALLOC FRAMING
 
 THREAD-SAFETY
 -------------
-One ``threading.RLock`` per instance. ``search`` acquires it for the whole
-compute (safe buffer reuse of ``_scores``/``_q_f32``/``_q_i8`` and exclusion of
-concurrent writes). This SERIALIZES concurrent searches -- a read-write lock for
-true read concurrency is documented as future work. The guarantee is "no
-corruption, no torn reads, no buffer races", NOT "parallel reads".
+One ``threading.Lock`` per instance: guards writes (add/remove); search() is
+lock-free via per-call local buffer allocation. The guarantee is "no corruption,
+no torn reads during writes".
 
 CONVENTIONS (match prototypes/synthesis_v1.0)
 ---------------------------------------------
@@ -302,14 +300,8 @@ class AdaptiveVectorSearch:
         self._free: list[int] = []
         self._n = 0
         self._path = "int8"
-        # Pre-allocated per-query REUSABLE buffers (zero alloc in the hot path).
-        self._scores = np.zeros((self._cap,), dtype=np.float32)
-        self._q_f32 = np.zeros((self._dim,), dtype=np.float32)
-        self._q_i8 = np.zeros((self._dim,), dtype=np.int8)
-        self._q_scale = 0.0
-        # One RLock per instance: serializes searches for correctness (see
-        # docstring -- not parallel reads; RWLock is future work).
-        self._lock = threading.RLock()
+        # One Lock per instance: guards writes (add/remove); search() is lock-free.
+        self._lock = threading.Lock()
         # Native kernel (zero-alloc-ish fast path) or None (numpy fallback).
         self._kernel: "Callable[..., Any] | None" = (
             _try_import_native_kernel() if use_native else None
@@ -318,22 +310,19 @@ class AdaptiveVectorSearch:
     # -- capacity management ------------------------------------------------
 
     def _grow(self, new_cap: int) -> None:
-        """Geometrically grow both matrices + scales + scores to ``new_cap``."""
+        """Geometrically grow both matrices + scales to ``new_cap``."""
         import numpy as np
 
         f32 = np.zeros((new_cap, self._dim), dtype=np.float32)
         i8 = np.zeros((new_cap, self._dim), dtype=np.int8)
         scales = np.zeros((new_cap,), dtype=np.float32)
-        scores = np.zeros((new_cap,), dtype=np.float32)
         if self._n > 0:
             f32[: self._n] = self._f32[: self._n]
             i8[: self._n] = self._i8[: self._n]
             scales[: self._n] = self._scales[: self._n]
-            scores[: self._n] = self._scores[: self._n]
         self._f32 = f32
         self._i8 = i8
         self._scales = scales
-        self._scores = scores
         self._ids = self._ids + [None] * (new_cap - self._cap)
         self._cap = new_cap
 
@@ -404,77 +393,74 @@ class AdaptiveVectorSearch:
             N >  BLAS_THRESHOLD(3000) -> "blas"
             else -> keep ``self._path`` (hysteresis; switch only on boundary cross)
 
-        The whole compute holds ``self._lock`` so the reusable ``_scores`` /
-        ``_q_f32`` / ``_q_i8`` buffers are safe from concurrent writes and each
-        other. Returns ``[(id, score)]`` sorted score desc; ties broken by slot
-        index asc for determinism. Scores clamped to [0, 1].
+        Lock-free: allocates local per-call buffers (scores, q_f32) instead of
+        reusing shared instance buffers. Returns ``[(id, score)]`` sorted score
+        desc; ties broken by slot index asc for determinism. Scores clamped to
+        [0, 1].
         """
         import numpy as np
 
-        with self._lock:
-            n = self._n
-            if n == 0 or k <= 0:
-                return []
-            # Stage the query into reusable buffers (no alloc in steady state).
-            qn = _l2_normalize(query)
-            self._q_f32[:] = qn
-            qi8, qscale = quantize_int8_symmetric(qn)
-            self._q_i8[:] = qi8
-            self._q_scale = qscale
+        n = self._n
+        if n == 0 or k <= 0:
+            return []
+        # Allocate local per-call buffers (lock-free — no shared mutable state).
+        scores = np.zeros((n,), dtype=np.float32)
+        q_f32 = np.zeros((self._dim,), dtype=np.float32)
 
-            # Dispatch with hysteresis.
-            if n <= self._int8_threshold:
-                path = "int8"
-            elif n > self._blas_threshold:
-                path = "blas"
+        # Stage the query.
+        qn = _l2_normalize(query)
+        q_f32[:] = qn
+        qi8, qscale = quantize_int8_symmetric(qn)
+
+        # Dispatch with hysteresis.
+        if n <= self._int8_threshold:
+            path = "int8"
+        elif n > self._blas_threshold:
+            path = "blas"
+        else:
+            path = self._path  # hysteresis: keep the latched path
+        self._path = path  # latch
+
+        # v1.3.0: the int8 NEON kernel was a prototype-only artifact
+        # (prototypes/simd_int8_v0.5) that never shipped in the wheel, so
+        # ``self._kernel`` is None for every install. Routing to the int8
+        # path in that case would hit ``int8_dot_numpy`` — a no-SIMD
+        # int8→int32 upcast that is SLOWER than BLAS at every scale (see the
+        # module docstring). Force BLAS whenever there is no real native
+        # kernel, so pip users always get the zero-copy BLAS path instead of
+        # the slow correctness oracle. (If a developer has wired the
+        # prototype .so in via IZERO_INT8_NATIVE_SO, _kernel is non-None and
+        # the int8 fast path is honored as before.)
+        if path == "int8" and self._kernel is None:
+            path = "blas"
+            self._path = path
+
+        if path == "blas":
+            np.dot(self._f32[:n], q_f32, out=scores)
+        else:
+            if self._kernel is not None:
+                raw = self._kernel(
+                    self._i8[:n], qi8, self._scales[:n], qscale
+                )
+                scores[:] = raw
             else:
-                path = self._path  # hysteresis: keep the latched path
-            self._path = path  # latch
+                int8_dot_numpy(
+                    self._i8[:n], qi8, self._scales[:n], qscale,
+                    scores,
+                )
+        # Clamp to [0,1] to match the synthesis store contract.
+        np.clip(scores, 0.0, 1.0, out=scores)
 
-            # v1.3.0: the int8 NEON kernel was a prototype-only artifact
-            # (prototypes/simd_int8_v0.5) that never shipped in the wheel, so
-            # ``self._kernel`` is None for every install. Routing to the int8
-            # path in that case would hit ``int8_dot_numpy`` — a no-SIMD
-            # int8→int32 upcast that is SLOWER than BLAS at every scale (see the
-            # module docstring). Force BLAS whenever there is no real native
-            # kernel, so pip users always get the zero-copy BLAS path instead of
-            # the slow correctness oracle. (If a developer has wired the
-            # prototype .so in via IZERO_INT8_NATIVE_SO, _kernel is non-None and
-            # the int8 fast path is honored as before.)
-            if path == "int8" and self._kernel is None:
-                path = "blas"
-                self._path = path
-
-            if path == "blas":
-                # Zero-alloc dot: np.dot(matrix, query, out=_scores[:n]).
-                np.dot(self._f32[:n], self._q_f32, out=self._scores[:n])
-            else:
-                if self._kernel is not None:
-                    # Native kernel returns a fresh (n,) array (no out= kwarg);
-                    # copy into the reusable scores buffer.
-                    raw = self._kernel(
-                        self._i8[:n], self._q_i8, self._scales[:n], self._q_scale
-                    )
-                    self._scores[:n] = raw
-                else:
-                    int8_dot_numpy(
-                        self._i8[:n], self._q_i8, self._scales[:n], self._q_scale,
-                        self._scores,
-                    )
-            scores = self._scores[:n]
-            # Clamp to [0,1] to match the synthesis store contract.
-            np.clip(scores, 0.0, 1.0, out=scores)
-
-            k_eff = min(k, n)
-            if k_eff == 0:
-                return []
-            # Top-k: argpartition (small (k,) alloc, unavoidable in numpy),
-            # then argsort the candidates desc for deterministic ordering.
-            idx = np.argpartition(scores, -k_eff)[-k_eff:]
-            order = idx[np.argsort(scores[idx])[::-1]]
-            # Tie-break: score desc (above) then slot index asc (stable under
-            # equal scores since idx ascends and argsort is stable).
-            return [(self._ids[int(j)], float(scores[int(j)])) for j in order]
+        k_eff = min(k, n)
+        if k_eff == 0:
+            return []
+        # Top-k: argpartition (small (k,) alloc, unavoidable in numpy),
+        # then argsort the candidates desc for deterministic ordering.
+        idx = np.argpartition(scores, -k_eff)[-k_eff:]
+        order = idx[np.argsort(scores[idx])[::-1]]
+        # Tie-break: score desc (above) then slot index asc (stable under
+        # equal scores since idx ascends and argsort is stable).
+        return [(self._ids[int(j)], float(scores[int(j)])) for j in order]
 
     # -- introspection ------------------------------------------------------
 
