@@ -224,6 +224,46 @@ def test_search_returns_hits(tmp_path, capsys):
 
 
 # --------------------------------------------------------------------------- #
+# 4b. clean (Mem0-style) output: fact is the hero; --verbose restores columns
+# --------------------------------------------------------------------------- #
+def test_clean_output_fact_is_hero_not_id_or_score(tmp_path, capsys):
+    """The default (non-JSON) search/list output puts the fact text first, drops
+    the full uuid + score, and shows only a short id suffix — the Mem0-style
+    contract from ``render.py``. Exercises the full ``main()`` path, not just the
+    pure formatter (which ``test_render.py`` covers)."""
+    db = tmp_path / "cli_clean.db"
+    fact = "The user prefers dark mode for UI."
+    _add_json(main, capsys, str(db), fact)
+
+    # search (clean): fact present, full uuid + score suppressed, no === banner.
+    rc, out, err = run(main, ["search", "dark mode", *db_arg(str(db))], capsys)
+    assert rc == 0, f"clean search failed rc={rc} err={err!r} out={out!r}"
+    assert fact in out, f"clean search must show the fact text, got {out!r}"
+    assert "===" not in out, f"clean output must drop the === banner, got {out!r}"
+
+    # list (clean): fact present, no aligned id column header.
+    rc, out, err = run(main, ["list", *db_arg(str(db))], capsys)
+    assert rc == 0
+    assert fact in out
+    assert "age_d" not in out  # the verbose column header must be absent by default
+
+
+def test_verbose_restores_technical_columns(tmp_path, capsys):
+    """``--verbose`` brings back the pre-redesign aligned columns (score, age_d)
+    on search — a faithful restore for power users / scripts."""
+    db = tmp_path / "cli_verbose.db"
+    _add_json(main, capsys, str(db), "The user prefers dark mode for UI.")
+
+    rc, out, err = run(
+        main, ["search", "dark mode", *db_arg(str(db)), "--verbose"], capsys
+    )
+    assert rc == 0, f"search --verbose failed rc={rc} err={err!r} out={out!r}"
+    assert "score" in out and "age_d" in out, (
+        f"search --verbose must restore technical columns, got {out!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # 5. active orders by vitality desc (touch boosts a card)
 # --------------------------------------------------------------------------- #
 def test_active_orders_by_vitality_desc(tmp_path, capsys):

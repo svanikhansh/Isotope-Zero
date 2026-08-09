@@ -1,0 +1,22 @@
+{
+  "id": "izero",
+  "name": "izero",
+  "version": "1.2.0",
+  "description": "Local-first cognitive memory for Claude Code. Decay/consolidation/graph + offline ONNX embeddings. No cloud, no API key — memory stays in ~/.isotope_zero/.",
+  "author": {
+    "name": "Svanik Kolli"
+  },
+  "homepage": "https://github.com/svanikhansh/isotope_zero",
+  "repository": "https://github.com/svanikhansh/isotope_zero",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "local-first",
+    "mcp",
+    "onnx",
+    "sqlite",
+    "decay",
+    "cognitive"
+  ],
+  "contextFileName": "AGENTS.md"
+}

@@ -65,11 +65,18 @@ class IsotopeZeroServer:
     # Tool implementations
     # ------------------------------------------------------------------ #
 
-    def add_memory(self, content: str) -> dict[str, Any]:
+    def add_memory(self, content: str, tags: list[str] | None = None) -> dict[str, Any]:
         """Triage + compress + store a raw memory input.
 
         Runs the local heuristic classifier (ADD/UPDATE/DELETE) and the
         compressor, embeds the resulting fact, and persists a MemoryCard.
+
+        ``tags`` (optional) are merged onto the card's auto-extracted tags —
+        used by the editor-integration capture hooks to stamp provenance tags
+        like ``file:<relpath>`` / ``type:anti_pattern`` / ``branch:<name>`` so
+        path-scoped recall (``store.sql_lookup("tags", "file:...")``) can find
+        them. ``None`` (the default) is a no-op, so existing callers and the
+        MCP tool's default behavior are unchanged.
         """
         global _tokens_saved_total, _raw_history_total
         if not content or not content.strip():
@@ -79,6 +86,15 @@ class IsotopeZeroServer:
         # Embed the compressed FACT (not the raw input) — cheaper and the
         # vector then represents the canonical assertion.
         card = compress_to_card(content, embedding=None)
+        # Merge caller-supplied provenance tags onto the auto-extracted ones
+        # (order-preserving, deduped). Purely additive; never drops tags the
+        # extractor found. Backward-compatible: None => unchanged.
+        if tags:
+            merged = list(card.tags)
+            for t in tags:
+                if t not in merged:
+                    merged.append(t)
+            card.tags = merged
         emb = self.embedder.embed_text(card.fact)
         card.embedding = emb
 
@@ -248,11 +264,13 @@ def build_mcp_app(
     app = ServerCls("isotope_zero")
 
     @app.tool()
-    def add_memory(content: str) -> dict:
+    def add_memory(content: str, tags: list[str] | None = None) -> dict:
         """Store a memory. Triage classifies ADD/UPDATE/DELETE locally; the
         input is compressed into a minimal Memory Card (fact + evidence) and
-        persisted. Returns the action taken and the card id."""
-        return server.add_memory(content)
+        persisted. Optional ``tags`` are merged onto the card's auto-extracted
+        tags (e.g. ``["decision", "source:remember"]``) for provenance + later
+        tag-scoped recall. Returns the action taken and the card id."""
+        return server.add_memory(content, tags=tags)
 
     @app.tool()
     def query_memory(query: str, token_budget: int = 300) -> dict:

@@ -81,14 +81,24 @@ from ..core.store import MemoryStore
 from ..diagnostics import configure_logging
 from ..tokens import estimate_tokens
 from ..types import MemoryCard, now_ts
+from ._fmtutil import age_days, human_bytes, trunc
+from ._fmtutil import _SECS_PER_DAY
 
 # Default on-disk store location. Used only when no ``--db`` is given AND the
 # file exists; otherwise we fall back to an empty ``:memory:`` store so the
 # CLI is always runnable with zero setup.
 _DEFAULT_DB: str = os.path.expanduser("~/.isotope_zero/isotope_zero.db")
 
-# Seconds per day, for the age-in-days display.
-_SECS_PER_DAY: float = 86400.0
+
+# Backward-compat aliases: debug.py historically defined _human_bytes/_trunc/
+# _age_days inline; dashboard.py and render.py import them. They now delegate to
+# the stdlib-only _fmtutil (keeps render.py from pulling the engine stack), but
+# keep their underscore-prefixed names so existing imports don't break.
+# _SECS_PER_DAY is likewise sourced from _fmtutil so the JSON age_days
+# computation and the display helpers share one source of truth.
+_human_bytes = human_bytes
+_trunc = trunc
+_age_days = age_days
 
 
 # ---------------------------------------------------------------------- #
@@ -114,15 +124,6 @@ def _open_store(db_path: str) -> MemoryStore | None:
     return MemoryStore(db_path)
 
 
-def _human_bytes(n: int) -> str:
-    """Bytes -> human-readable string (B / KB / MB)."""
-    if n < 1024:
-        return f"{n} B"
-    if n < 1024 * 1024:
-        return f"{n / 1024:.1f} KB"
-    return f"{n / (1024 * 1024):.2f} MB"
-
-
 def _embedding_mode(store: MemoryStore) -> str:
     """REAL ONNX / FALLBACK / none — from the store's attached embedder."""
     emb = getattr(store, "embedder", None)
@@ -131,12 +132,6 @@ def _embedding_mode(store: MemoryStore) -> str:
     if getattr(emb, "is_real", False):
         return "REAL ONNX"
     return "FALLBACK"
-
-
-def _trunc(s: str, n: int) -> str:
-    """Truncate a string to n chars (display-only; JSON keeps full values)."""
-    s = str(s)
-    return s if len(s) <= n else s[:n]
 
 
 def _open_client(db_path: str, create: bool = True) -> IsotopeZero | None:
@@ -208,11 +203,6 @@ def _confirm(prompt: str, yes: bool) -> bool:
     return line.strip().lower().startswith("y")
 
 
-def _age_days(timestamp: float, now: float) -> float:
-    """Card age in days, floored at 0. Shared by the list/recall/search views."""
-    return round(max(0.0, now - timestamp) / _SECS_PER_DAY, 1)
-
-
 def _run_client(db_path: str, fn, *cmd_args: Any, create: bool = True) -> int:
     """Open an ``IsotopeZero`` client, guard a missing path, run ``fn``, close.
 
@@ -238,7 +228,19 @@ def _run_client(db_path: str, fn, *cmd_args: Any, create: bool = True) -> int:
 # inspect
 # ---------------------------------------------------------------------- #
 def _cmd_inspect(store: MemoryStore, top: int, as_json: bool) -> int:
-    """Print a human-readable (or JSON) store report."""
+    """Print a human-readable (or JSON) store report.
+
+    ``inspect`` is a *diagnostic* command — deliberately a verbose, banner-style
+    report (store header, per-card detail, schema, vitality) rather than the
+    clean hero-first layout the user-facing read commands (``recall``/``search``/
+    ``get``/``list``/``stats``/``tags``) adopted. It is intentionally carved out
+    of the clean-output redesign: its audience is someone forensically inspecting
+    a store (schema, embeddings, vitality, decay candidates), where the technical
+    density is the point. ``--json`` is available for scripting. The same carve-
+    out applies to ``dry-run-consolidation`` (a preview of what consolidation
+    would merge/decay). These two keep their established diagnostic format by
+    design, not by oversight.
+    """
     cards = store.all()
     total = len(cards)
     size_bytes = store.db_size_bytes()
@@ -393,7 +395,8 @@ def _cmd_add(client: IsotopeZero, fact: str, evidence: str, tags: list[str],
             payload["timestamp"] = card.timestamp
         print(json.dumps(payload, indent=2))
         return 0
-    print(f"remembered {cid}")
+    from .render import format_add
+    print(format_add(cid, not existed))
     return 0
 
 
@@ -401,7 +404,7 @@ def _cmd_add(client: IsotopeZero, fact: str, evidence: str, tags: list[str],
 # active — warmest memories (highest vitality first)
 # ---------------------------------------------------------------------- #
 def _cmd_active(client: IsotopeZero, top: int, tags: list[str],
-                min_vitality: float, as_json: bool) -> int:
+                min_vitality: float, as_json: bool, verbose: bool = False) -> int:
     """Rank all cards by vitality DESC, filter by tags/min-vitality, take top N."""
     cards = client.store.all()
     cards = _filter_by_tags(cards, tags)
@@ -413,55 +416,34 @@ def _cmd_active(client: IsotopeZero, top: int, tags: list[str],
     # item[1] is the card; the primary key negates the score (DESC), tiebreakers
     # read off the card (item[1].timestamp, item[1].id).
     scored.sort(key=lambda item: (-item[0], item[1].timestamp, item[1].id))
-    rows = [
-        _vitality_row(c, now, v) for v, c in scored if v >= min_vitality
-    ]
-    rows = rows[:top] if top > 0 else rows
+    kept = [(v, c) for v, c in scored if v >= min_vitality]
+    kept = kept[:top] if top > 0 else kept
+    rows = [_vitality_row(c, now, v) for v, c in kept]
 
     if as_json:
         print(json.dumps(rows, indent=2))
         return 0
 
-    print("=== isotope_zero active (highest vitality) ===")
-    if not rows:
-        print("  (no cards)")
-        return 0
-    print(
-        f"  {'id':<12}  {'fact':<60}  {'vital':>6}  "
-        f"{'acc':>4}  {'age_d':>7}"
-    )
-    for r in rows:
-        print(
-            f"  {_trunc(r['id'], 12):<12}  {_trunc(r['fact'], 60):<60}  "
-            f"{r['vitality']:>6.4f}  {r['access_count']:>4}  "
-            f"{r['age_days']:>7.1f}"
-        )
+    from .render import format_hits
+    # `active` ranks by vitality, not score. In verbose mode the technical
+    # columns need a real timestamp (for age) and a score slot (showing
+    # vitality) — build hit-shaped dicts from the kept (vitality, card) pairs.
+    if verbose:
+        verbose_rows = [
+            {"id": c.id, "fact": c.fact, "score": v, "timestamp": c.timestamp}
+            for v, c in kept
+        ]
+        print(format_hits(verbose_rows, now, verbose=True))
+    else:
+        print(format_hits(rows, now, verbose=False))
     return 0
 
 
 # ---------------------------------------------------------------------- #
 # recall — semantic retrieval
 # ---------------------------------------------------------------------- #
-def _print_hits(title: str, hits: list[dict[str, Any]], now: float) -> None:
-    """Shared aligned-column printer for recall/search results."""
-    print(f"=== isotope_zero {title} ===")
-    if not hits:
-        print("  (no hits)")
-        return
-    print(
-        f"  {'#':>2}  {'id':<12}  {'fact':<60}  "
-        f"{'score':>7}  {'age_d':>7}"
-    )
-    for rank, h in enumerate(hits, 1):
-        print(
-            f"  {rank:>2}  {_trunc(h['id'], 12):<12}  "
-            f"{_trunc(h['fact'], 60):<60}  {h['score']:>7.4f}  "
-            f"{_age_days(h['timestamp'], now):>7.1f}"
-        )
-
-
 def _cmd_recall(client: IsotopeZero, query: str, k: int, alpha: float | None,
-                as_json: bool) -> int:
+                as_json: bool, verbose: bool = False) -> int:
     """Semantic recall: embed the query, return top-k by fused score."""
     hits = client.recall(query, k=k, alpha=alpha)
     now = now_ts()
@@ -469,7 +451,8 @@ def _cmd_recall(client: IsotopeZero, query: str, k: int, alpha: float | None,
         out = [dict(h, age_days=_age_days(h["timestamp"], now)) for h in hits]
         print(json.dumps(out, indent=2))
         return 0
-    _print_hits("recall", hits, now)
+    from .render import format_hits
+    print(format_hits(hits, now, verbose=verbose))
     return 0
 
 
@@ -477,7 +460,7 @@ def _cmd_recall(client: IsotopeZero, query: str, k: int, alpha: float | None,
 # search — hybrid (vector + BM25 + graph)
 # ---------------------------------------------------------------------- #
 def _cmd_search(client: IsotopeZero, query: str, k: int, alpha: float | None,
-                as_json: bool) -> int:
+                as_json: bool, verbose: bool = False) -> int:
     """Hybrid search; same output shape as recall."""
     hits = client.search(query, k=k, alpha=alpha)
     now = now_ts()
@@ -485,7 +468,8 @@ def _cmd_search(client: IsotopeZero, query: str, k: int, alpha: float | None,
         out = [dict(h, age_days=_age_days(h["timestamp"], now)) for h in hits]
         print(json.dumps(out, indent=2))
         return 0
-    _print_hits("search", hits, now)
+    from .render import format_hits
+    print(format_hits(hits, now, verbose=verbose))
     return 0
 
 
@@ -493,7 +477,7 @@ def _cmd_search(client: IsotopeZero, query: str, k: int, alpha: float | None,
 # list — all cards, newest first, optional tag filter
 # ---------------------------------------------------------------------- #
 def _cmd_list(client: IsotopeZero, tags: list[str], limit: int,
-              as_json: bool) -> int:
+              as_json: bool, verbose: bool = False) -> int:
     """List cards newest-first (timestamp desc), filtered by tags, capped at limit."""
     cards = client.store.all()
     cards = _filter_by_tags(cards, tags)
@@ -516,29 +500,20 @@ def _cmd_list(client: IsotopeZero, tags: list[str], limit: int,
         print(json.dumps(rows, indent=2))
         return 0
 
-    print("=== isotope_zero list (newest first) ===")
-    if not rows:
-        print("  (no cards)")
-        return 0
-    print(
-        f"  {'id':<12}  {'fact':<60}  {'tags':<20}  {'age_d':>7}"
-    )
-    for r in rows:
-        print(
-            f"  {_trunc(r['id'], 12):<12}  {_trunc(r['fact'], 60):<60}  "
-            f"{_trunc(','.join(r['tags']), 20):<20}  {r['age_days']:>7.1f}"
-        )
+    from .render import format_list_rows
+    print(format_list_rows(rows, now, verbose=verbose, filtered=bool(tags)))
     return 0
 
 
 # ---------------------------------------------------------------------- #
 # get — full detail for one card
 # ---------------------------------------------------------------------- #
-def _cmd_get(client: IsotopeZero, card_id: str, as_json: bool) -> int:
+def _cmd_get(client: IsotopeZero, card_id: str, as_json: bool,
+             verbose: bool = False) -> int:
     """Print full detail for one card, or an error if it is missing."""
     card = client.store.get(card_id)
     if card is None:
-        print(f"no card with id: {card_id}", file=sys.stderr)
+        print(f"no memory with id: {card_id}", file=sys.stderr)
         return 1
     cons = Consolidator(client.store)
     now = now_ts()
@@ -560,16 +535,14 @@ def _cmd_get(client: IsotopeZero, card_id: str, as_json: bool) -> int:
         print(json.dumps(payload, indent=2))
         return 0
 
-    print(f"=== isotope_zero get {card.id} ===")
-    print(f"id:            {card.id}")
-    print(f"fact:          {card.fact}")
-    print(f"evidence:      {card.evidence}")
-    print(f"tags:          {', '.join(card.tags) if card.tags else '(none)'}")
-    print(f"timestamp:     {card.timestamp}")
-    print(f"last_access:   {card.last_access}")
-    print(f"access_count:  {card.access_count}")
-    print(f"vitality:      {vitality:.4f}")
-    print(f"source_tokens: {card.source_tokens}")
+    from .render import format_card
+    print(
+        format_card(
+            card.id, card.fact, card.evidence, list(card.tags),
+            card.timestamp, card.last_access, card.access_count,
+            vitality, card.source_tokens, now, verbose=verbose,
+        )
+    )
     return 0
 
 
@@ -579,16 +552,17 @@ def _cmd_get(client: IsotopeZero, card_id: str, as_json: bool) -> int:
 def _cmd_forget(client: IsotopeZero, card_id: str, yes: bool) -> int:
     """Confirm (unless --yes), then delete one card."""
     if client.store.get(card_id) is None:
-        print(f"no card with id: {card_id}", file=sys.stderr)
+        print(f"no memory with id: {card_id}", file=sys.stderr)
         return 1
     if not _confirm(f"forget {card_id}?", yes):
         print("aborted")
         return 1
     deleted = client.store.delete(card_id)
     if deleted:
-        print(f"deleted {card_id}")
+        from .render import format_forget
+        print(format_forget(card_id))
         return 0
-    print(f"no card with id: {card_id}", file=sys.stderr)
+    print(f"no memory with id: {card_id}", file=sys.stderr)
     return 1
 
 
@@ -599,16 +573,17 @@ def _cmd_touch(client: IsotopeZero, card_id: str) -> int:
     """Record a recall on a card; print refreshed or not-found."""
     ok = client.touch(card_id)
     if ok:
-        print(f"refreshed {card_id}")
+        from .render import format_touch
+        print(format_touch(card_id))
         return 0
-    print(f"no card with id: {card_id}", file=sys.stderr)
+    print(f"no memory with id: {card_id}", file=sys.stderr)
     return 1
 
 
 # ---------------------------------------------------------------------- #
 # tags — tag distribution
 # ---------------------------------------------------------------------- #
-def _cmd_tags(client: IsotopeZero, as_json: bool) -> int:
+def _cmd_tags(client: IsotopeZero, as_json: bool, verbose: bool = False) -> int:
     """Aggregate all card tags into {tag: count}, sorted by count desc."""
     counts: dict[str, int] = {}
     for card in client.store.all():
@@ -620,20 +595,15 @@ def _cmd_tags(client: IsotopeZero, as_json: bool) -> int:
         print(json.dumps(dict(ordered), indent=2))
         return 0
 
-    print("=== isotope_zero tags ===")
-    if not ordered:
-        print("  (no tags)")
-        return 0
-    print(f"  {'tag':<24}  {'count':>5}")
-    for tag, n in ordered:
-        print(f"  {_trunc(tag, 24):<24}  {n:>5}")
+    from .render import format_tags
+    print(format_tags(dict(ordered), verbose=verbose))
     return 0
 
 
 # ---------------------------------------------------------------------- #
 # stats — store overview
 # ---------------------------------------------------------------------- #
-def _cmd_stats(client: IsotopeZero, as_json: bool) -> int:
+def _cmd_stats(client: IsotopeZero, as_json: bool, verbose: bool = False) -> int:
     """Count, DB size, embedding mode, token footprint, tags, vitality histogram."""
     cards = client.store.all()
     count = client.count()
@@ -682,24 +652,11 @@ def _cmd_stats(client: IsotopeZero, as_json: bool) -> int:
         print(json.dumps(payload, indent=2))
         return 0
 
-    print("=== isotope_zero stats ===")
-    print(f"count:             {count}")
-    print(f"db size:           {size_bytes} bytes ({_human_bytes(size_bytes)})")
-    print(f"embedding mode:    {mode}")
-    print(f"token footprint:   {tokens} tokens (fact+evidence)")
-    print()
-    print("tag distribution:")
-    if tag_dist:
-        print(f"  {'tag':<24}  {'count':>5}")
-        for tag, n in tag_dist.items():
-            print(f"  {_trunc(tag, 24):<24}  {n:>5}")
-    else:
-        print("  (no tags)")
-    print()
-    print("vitality histogram:")
-    print(f"  fresh (>=0.66):   {fresh}")
-    print(f"  aging (0.33-0.66):{aging}")
-    print(f"  decayed (<0.33):  {decayed}")
+    from .render import format_stats
+    print(
+        format_stats(count, size_bytes, mode, tokens, tag_dist, histogram,
+                     verbose=verbose)
+    )
     return 0
 
 
@@ -840,6 +797,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="emit the rows as a JSON array instead of aligned text",
     )
+    p_active.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show technical columns (id, vitality, access, age) — power-user view",
+    )
 
     # recall
     p_recall = sub.add_parser(
@@ -868,6 +830,11 @@ def main(argv: list[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="emit the hits as a JSON array instead of aligned text",
+    )
+    p_recall.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show technical columns (id, score, age) — power-user view",
     )
 
     # search
@@ -898,6 +865,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="emit the hits as a JSON array instead of aligned text",
     )
+    p_search.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show technical columns (id, score, age) — power-user view",
+    )
 
     # list
     p_list = sub.add_parser(
@@ -925,6 +897,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="emit the rows as a JSON array instead of aligned text",
     )
+    p_list.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show technical columns (id, tags, age) — power-user view",
+    )
 
     # get
     p_get = sub.add_parser(
@@ -941,6 +918,11 @@ def main(argv: list[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="emit the card as a JSON object instead of aligned text",
+    )
+    p_get.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show technical fields (timestamp, vitality, tokens) — power-user view",
     )
 
     # forget
@@ -987,6 +969,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="emit the distribution as a JSON object instead of aligned text",
     )
+    p_tags.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show an aligned tag / count table (count-desc) — power-user view",
+    )
 
     # stats
     p_stats = sub.add_parser(
@@ -1002,6 +989,11 @@ def main(argv: list[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="emit the overview as a JSON object instead of aligned text",
+    )
+    p_stats.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show tag distribution + vitality histogram — power-user view",
     )
 
     # dashboard — live read-only TUI overview of a store (auto-refresh).
@@ -1026,6 +1018,56 @@ def main(argv: list[str] | None = None) -> int:
         help="print one static frame and exit (scriptable; no live loop).",
     )
 
+    # hook — Claude Code lifecycle hook entrypoint (editor integration).
+    # Reads hook JSON from stdin, dispatches to integrations.hooks.run_hook,
+    # prints the result JSON, exits 0 (or 2 for the write-guard block). All
+    # hook logic is local (no network); the bash wrappers in
+    # integrations/izero-plugin/hooks/ pipe stdin here. See the plan: this is
+    # the linchpin that inverts mem0's per-hook python-script sprawl.
+    p_hook = sub.add_parser(
+        "hook",
+        help="Claude Code lifecycle hook entrypoint (reads JSON from stdin)",
+    )
+    p_hook.add_argument(
+        "event",
+        help="hook event: session_start|user_prompt|file_read|block_memory_write"
+        "|bash_output|stop|pre_compact",
+    )
+    p_hook.add_argument(
+        "--db",
+        default=None,
+        help="DB path override (defaults to $ISOTOPE_ZERO_DB, then the store).",
+    )
+
+    # plugin — install the editor plugin bundle (local-path, no marketplace).
+    # Copies integrations/izero-plugin/ into the editor's config dir and
+    # rewrites .mcp.json command to a resolvable python when izero-mcp isn't
+    # on PATH. Local-first: no download, no API key. --dry-run validates only.
+    p_plugin = sub.add_parser(
+        "plugin",
+        help="manage the editor integration plugin (install / dry-run)",
+    )
+    p_plugin_sub = p_plugin.add_subparsers(dest="plugin_command", required=True)
+    p_plugin_install = p_plugin_sub.add_parser(
+        "install", help="install the izero plugin into an editor config dir",
+    )
+    p_plugin_install.add_argument(
+        "--target",
+        default=None,
+        help="explicit target dir (default: ~/.claude/plugins/izero).",
+    )
+    p_plugin_install.add_argument(
+        "--editor",
+        choices=("claude", "cursor", "codex"),
+        default="claude",
+        help="editor variant (default claude).",
+    )
+    p_plugin_install.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="resolve + validate the bundle and print target paths without writing.",
+    )
+
     args = parser.parse_args(argv)
 
     # Bare ``izero`` (no subcommand) → interactive onboarding + command menu.
@@ -1047,6 +1089,17 @@ def main(argv: list[str] | None = None) -> int:
         if db_path == ":memory:":
             db_path = _DEFAULT_DB
         return run_menu(db_path)
+
+    # plugin install declares no --db (it never touches the store): dispatch it
+    # BEFORE _resolve_db_path(args.db), which would otherwise AttributeError on
+    # the missing args.db. Same ordering rationale as the bare-invocation menu
+    # path above. Local-only: no store, no network, no API key.
+    if args.command == "plugin" and args.plugin_command == "install":
+        from ..integrations.cli import plugin_install
+
+        return plugin_install(
+            target=args.target, editor=args.editor, dry_run=args.dry_run
+        )
 
     db_path = _resolve_db_path(args.db)
 
@@ -1091,30 +1144,44 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "active":
         return _run_client(
             db_path, _cmd_active, args.top, _parse_tags(args.tags),
-            args.min_vitality, args.json,
+            args.min_vitality, args.json, args.verbose,
         )
     if args.command == "recall":
         return _run_client(
             db_path, _cmd_recall, args.query, args.k, args.alpha, args.json,
+            args.verbose,
         )
     if args.command == "search":
         return _run_client(
             db_path, _cmd_search, args.query, args.k, args.alpha, args.json,
+            args.verbose,
         )
     if args.command == "list":
         return _run_client(
             db_path, _cmd_list, _parse_tags(args.tags), args.limit, args.json,
+            args.verbose,
         )
     if args.command == "get":
-        return _run_client(db_path, _cmd_get, args.id, args.json)
+        return _run_client(db_path, _cmd_get, args.id, args.json, args.verbose)
     if args.command == "forget":
         return _run_client(db_path, _cmd_forget, args.id, args.yes)
     if args.command == "touch":
         return _run_client(db_path, _cmd_touch, args.id)
     if args.command == "tags":
-        return _run_client(db_path, _cmd_tags, args.json)
+        return _run_client(db_path, _cmd_tags, args.json, args.verbose)
     if args.command == "stats":
-        return _run_client(db_path, _cmd_stats, args.json)
+        return _run_client(db_path, _cmd_stats, args.json, args.verbose)
+
+    # hook — Claude Code lifecycle hook entrypoint (editor integration).
+    # Lazy import keeps `import isotope_zero.cli.debug` cheap (no integrations
+    # import at parse time). Pass the RAW --db (None when unset) so run_hook
+    # honors $ISOTOPE_ZERO_DB (set by the plugin's .mcp.json env) before
+    # falling back to the on-disk default — NOT the _resolve_db_path value,
+    # which would collapse to ":memory:" when no store exists yet.
+    if args.command == "hook":
+        from ..integrations import run_hook
+
+        return run_hook(args.event, db_path=args.db)
 
     return 0
 

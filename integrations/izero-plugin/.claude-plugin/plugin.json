@@ -1,0 +1,22 @@
+{
+  "name": "izero",
+  "version": "1.2.0",
+  "description": "Local-first cognitive memory for Claude Code. Decay/consolidation/graph + offline ONNX embeddings. No cloud, no API key — memory stays at ~/.isotope_zero/.",
+  "author": {
+    "name": "Svanik Kolli"
+  },
+  "homepage": "https://github.com/svanikhansh/isotope_zero",
+  "repository": "https://github.com/svanikhansh/isotope_zero",
+  "license": "MIT",
+  "keywords": ["memory", "local-first", "mcp", "onnx", "sqlite", "decay", "cognitive"],
+  "contextFileName": "AGENTS.md",
+  "userConfig": {
+    "db_path": {
+      "type": "string",
+      "title": "izero store path",
+      "description": "Path to the local SQLite memory store. Defaults to ~/.isotope_zero/isotope_zero.db — memory never leaves this machine. Not sensitive: no API key, no credentials, just a local file path.",
+      "sensitive": false,
+      "required": false
+    }
+  }
+}

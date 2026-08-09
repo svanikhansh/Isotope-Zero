@@ -105,7 +105,15 @@ class HybridEmbeddingEngine:
                 # honestly from the daemon's own state.
                 self._mode = "daemon"
         except Exception as exc:  # noqa: BLE001 — daemon unavailability must never crash
-            log.warning(
+            # When the caller asked us to spawn a daemon (the library default,
+            # spawn_daemon=True), a missing/unreachable daemon IS unexpected and
+            # worth surfacing at WARNING. When spawn_daemon=False the caller
+            # deliberately chose the in-process path (the CLI always does — it
+            # never wants a background daemon), so "unavailable" is the expected
+            # outcome, not a warning; log it at DEBUG so the CLI's clean,
+            # fact-first output isn't preceded by a daemon-socket diagnostic.
+            level = log.warning if spawn_daemon else log.debug
+            level(
                 "embedding daemon unavailable (%s); using in-process path.",
                 exc,
             )
