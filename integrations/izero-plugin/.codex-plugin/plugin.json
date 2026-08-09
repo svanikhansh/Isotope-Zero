@@ -1,0 +1,31 @@
+{
+  "name": "izero",
+  "version": "1.2.0",
+  "description": "Local-first cognitive memory for Codex. Remembers decisions, patterns, and preferences across sessions — no cloud, no API key, offline ONNX embeddings.",
+  "author": {
+    "name": "Svanik Kolli",
+    "url": "https://github.com/svanikhansh/isotope_zero"
+  },
+  "homepage": "https://github.com/svanikhansh/isotope_zero",
+  "repository": "https://github.com/svanikhansh/isotope_zero",
+  "license": "MIT",
+  "keywords": ["memory", "local-first", "mcp", "onnx", "decay", "cognitive"],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-mcp.json",
+  "hooks": "./hooks/codex-hooks.json",
+  "interface": {
+    "displayName": "izero",
+    "shortDescription": "Local-first cognitive memory layer for AI coding workflows",
+    "longDescription": "izero adds long-term, decaying, consolidated memory to Codex. Store decisions, user preferences, project context, and session state across conversations. Memories are retrieved via local hybrid search (vector + BM25 + entity graph) so Codex always has the right context — without any network call. The store lives at ~/.isotope_zero/, works offline, and needs no API key.",
+    "developerName": "Svanik Kolli",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/svanikhansh/isotope_zero",
+    "defaultPrompt": [
+      "Search my memories for recent project decisions",
+      "Remember that I prefer spaces over tabs",
+      "What do you know about my coding preferences?"
+    ],
+    "brandColor": "#10B981"
+  }
+}

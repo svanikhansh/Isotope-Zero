@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "izero": {
+      "command": "izero-mcp",
+      "args": [],
+      "env": {
+        "ISOTOPE_ZERO_DB": "~/.isotope_zero/isotope_zero.db"
+      }
+    }
+  }
+}

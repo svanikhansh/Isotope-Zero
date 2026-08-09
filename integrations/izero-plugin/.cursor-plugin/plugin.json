@@ -1,0 +1,15 @@
+{
+  "name": "izero",
+  "version": "1.2.0",
+  "description": "Local-first cognitive memory layer. Add persistent, decaying, consolidated memory + offline ONNX embeddings via the izero stdio MCP server. No cloud, no API key.",
+  "author": {
+    "name": "Svanik Kolli"
+  },
+  "homepage": "https://github.com/svanikhansh/isotope_zero",
+  "repository": "https://github.com/svanikhansh/isotope_zero",
+  "license": "MIT",
+  "keywords": ["izero", "memory", "local-first", "mcp", "onnx", "decay", "cognitive"],
+  "skills": "./skills/",
+  "hooks": "./hooks/cursor-hooks.json",
+  "mcpServers": ".cursor-mcp.json"
+}

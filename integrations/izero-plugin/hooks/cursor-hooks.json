@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/session_start.sh",
+        "matcher": "startup|resume|compact",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/user_prompt.sh",
+        "timeout": 12
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/block_memory_write.sh",
+        "matcher": "Write|Edit|MultiEdit",
+        "timeout": 3
+      },
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/file_read.sh",
+        "matcher": "Read",
+        "timeout": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/bash_output.sh",
+        "matcher": "Bash",
+        "timeout": 12
+      }
+    ],
+    "stop": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/stop.sh",
+        "timeout": 30
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/hooks/pre_compact.sh"
+      }
+    ]
+  }
+}
