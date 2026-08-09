@@ -932,6 +932,36 @@ class MemoryStore:
         self._mark_vec_dirty()
         return True
 
+    def recover_card(self, card_id: str) -> bool:
+        """Restore an archived card back to the live set.
+
+        Sets ``archived`` back to ``0.0`` so the card reappears in
+        ``all()``, ``sql_lookup()``, ``vector_search()``, and ``count()``.
+        Idempotent: a live (never-archived) card is a no-op. Returns False
+        if the card was not found.
+        """
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                "SELECT archived FROM memories WHERE id = ?", (card_id,)
+            )
+            row = cur.fetchone()
+            if row is None:
+                cur.close()
+                return False
+            archived_val = float(row[0]) if row[0] is not None else 0.0
+            if archived_val == 0.0:
+                cur.close()
+                log.debug("recover_card id=%s already live", card_id)
+                return True  # idempotent
+            cur.execute(
+                "UPDATE memories SET archived = 0.0 WHERE id = ?", (card_id,)
+            )
+            cur.close()
+        log.debug("recover_card id=%s restored", card_id)
+        self._mark_vec_dirty()
+        return True
+
     # ------------------------------------------------------------------ #
     # Phase 3: access tracking + batch consolidation
     # ------------------------------------------------------------------ #

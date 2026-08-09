@@ -346,9 +346,19 @@ Hybrid retrieval score:
 
 ## 4. Actionable Implementation Roadmap
 
-### 4.1 Multi-Tier Scoping Without External Dependencies
+### 4.1 Multi-Tier Scoping Without External Dependencies **[CLOSED -- v1.3.0]**
 
-**Objective:** Add user_id/agent_id/run_id scoping to Isotope Zero without introducing network dependencies.
+**Status:** IMPLEMENTED. The `memories` table already has a `scope` column (`TEXT NOT NULL DEFAULT 'default'`), visible in the SELECT column list in `store.py` line 75 (`_SQL_LOOKUP_SELECT` includes `"scope"`). The `card_edges` table also has a parallel `scope` column with matching index.
+
+**What exists:**
+- `add(self, card, scope)` -- accepts scope, stamps it onto the card row (store.py:742)
+- `vector_search(self, query_vec, k, alpha, scope)` -- filters by scope via cached numpy boolean mask (store.py:1417)
+- `hybrid_search(self, query, query_vec, k, alpha, top_n_per_branch, scope)` -- filters by scope (store.py:1660)
+- `_vec_scopes` + `_scope_index_cache` -- lazy per-scope index masks built on first use, invalidated on writes (store.py:368-375)
+- Schema migration idempotent on init (store.py:498-501)
+- Scope format: deterministic string `"user_id=X&agent_id=Y"` (same as Mem0 session_scope)
+
+The original specification below is preserved for reference:
 
 **Specification:**
 1. **Schema extension:**
@@ -371,11 +381,11 @@ Hybrid retrieval score:
 
 4. **Cross-scope isolation:** Enforced at query time via WHERE clause, not at insert time.
 
-**Complexity:** Medium (schema migration + query filter propagation)
+**Original Complexity:** Medium (schema migration + query filter propagation)
 
-**Performance impact:** Negligible (indexed column lookup, <0.1ms overhead per query)
+**Original Performance impact:** Negligible (indexed column lookup, <0.1ms overhead per query)
 
-**Timeline:** 2-3 days
+**Original Timeline:** 2-3 days
 
 ---
 
@@ -416,9 +426,19 @@ Hybrid retrieval score:
 
 ---
 
-### 4.3 Hybrid Graph + Vector Retrieval
+### 4.3 Hybrid Graph + Vector Retrieval **[CLOSED -- v1.3.0]**
 
-**Objective:** Combine semantic search with entity-based graph traversal for recall quality.
+**Status:** IMPLEMENTED. The store already has `hybrid_search()` with FTS5 BM25 + BLAS vector cosine + Reciprocal Rank Fusion (RRF), including entity-graph boost (store.py:1660).
+
+**What exists:**
+- `hybrid_search(query, query_vec, k, alpha, top_n_per_branch, scope)` -- late-fusion hybrid retrieval (store.py:1660-1708)
+- `_rrf_fusion()` -- reciprocal rank fusion per Cormack et al., SIGIR 2009: `Score(d) = alpha/(60+r_vec(d)) + (1-alpha)/(60+r_bm25(d)) + Boost(d)` (store.py:172)
+- `_fts5_query()` / `_fts5_escape()` -- builds FTS5 MATCH expression from free-text query (store.py:260-278)
+- `memories_fts` virtual table with external-content triggers (`memories_fts_aiu`, `_aad`, `_au`) (store.py:129-166)
+- Entity graph boost: query entities extracted, linked card neighbors discovered via `card_edges`, boost applied as `0.5/(1+0.001*(num_linked-1)^2)` (store.py:243-258)
+- Fallback posture: if FTS5 unavailable, BM25 branch contributes nothing (pure vector search); if query_vec is degenerate, only BM25 branch fires. Never raises.
+
+The original specification below is preserved for reference:
 
 **Specification:**
 1. **BM25 keyword search via SQLite FTS5:**
@@ -455,17 +475,21 @@ Hybrid retrieval score:
    ) -> list: ...
    ```
 
-**Complexity:** Medium (FTS5 setup + fusion logic)
+**Original Complexity:** Medium (FTS5 setup + fusion logic)
 
-**Performance impact:** 1-2ms overhead per query (FTS5 lookup + entity boost computation)
+**Original Performance impact:** 1-2ms overhead per query (FTS5 lookup + entity boost computation)
 
-**Timeline:** 3-5 days
+**Original Timeline:** 3-5 days
 
 ---
 
 ### 4.4 Consolidation Audit Trail & Recovery
 
 **Objective:** Preserve deleted memories for audit and enable recovery from consolidation mistakes.
+
+**Status (audit trail): CLOSED.** The `superseded_by` column already exists in both schema and `_SQL_LOOKUP_SELECT` (store.py:74, line item 9 in the SELECT: `"superseded_by"`). Migration is idempotent on init (store.py:489-490). When a card is consolidated into a survivor, `superseded_by` is set to the survivor's id, providing a traceable lineage chain.
+
+**Status (archive table + recovery API): OPEN.** The `memories_archive` table and `recover_memory()` API described below remain unimplemented. This is the remaining sub-gap -- the audit trail infrastructure exists, only the durable archive table is missing.
 
 **Specification:**
 1. **Superseded_by field:** Already implemented in schema
