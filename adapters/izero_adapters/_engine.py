@@ -8,11 +8,11 @@ framework-agnostic results.
 
 Design
 ------
-The Isotope Zero engine lives in ``prototypes/daemon_v0.7/isotope_zero`` and is
-NOT pip-installed in this repo. Rather than reinvent storage (which would
-diverge from the real schema and break vector compatibility), this module
-imports the engine by path with a graceful fallback. The public surface is the
-real ``MemoryStore`` + an embedder chosen with this priority:
+Since v1.3.0, isotope_zero is a SHIPPED pip package (py3-none-any wheel).
+This module imports the engine directly from the installed package; the
+prototypes/ dirs are frozen research artifacts and are not required at runtime.
+The public surface is the real ``MemoryStore`` + an embedder chosen with this
+priority:
 
 1. ``embedder=`` passed explicitly by the caller (highest priority — lets tests
    inject deterministic stubs).
@@ -36,72 +36,55 @@ import uuid
 from typing import Any, Sequence
 
 # --------------------------------------------------------------------------- #
-# Engine discovery: locate prototypes/synthesis_v1.0/isotope_zero by path.
+# Engine imports — from the installed isotope_zero package (v1.3.0+).
 # --------------------------------------------------------------------------- #
-# The repo layout is:  <repo>/adapters/  (this package)
-#                     <repo>/prototypes/synthesis_v1.0/isotope_zero/  (engine)
-# synthesis_v1.0 is the canonical, feature-complete prototype: multi-tier
-# scoping, late-fusion hybrid search, TTL, content dedup, and change history
-# all live here. The earlier daemon_v0.7 baseline predates every one of those
-# surfaces (its MemoryCard has no `scope`, its store has no `hybrid_search`),
-# so adapters that expose scope/hybrid MUST resolve synthesis_v1.0. Resolve the
-# engine root relative to this file so the adapter works regardless of the
-# caller's CWD. ``IZERO_ENGINE_PATH`` env var overrides for flexibility.
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.dirname(os.path.dirname(_THIS_DIR))
-_DEFAULT_ENGINE_PATH = os.path.join(_REPO_ROOT, "prototypes", "synthesis_v1.0")
-_ENGINE_PATH = os.environ.get("IZERO_ENGINE_PATH", _DEFAULT_ENGINE_PATH)
+# The prototypes/ dirs (daemon_v0.7, synthesis_v1.0) are frozen research
+# artifacts and are NOT imported. The wheel ships the complete engine at
+# isotope_zero.core.store, isotope_zero.embeddings.*, isotope_zero.daemon.*.
+_MODULE_LEVEL_IMPORT_ATTEMPTED = False
+_MemoryStore: Any = None
+_MemoryCard: Any = None
+_DaemonClient: Any = None
+_engine_import_error: Exception | None = None
 
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_DIM = 384  # all-MiniLM-L6-v2 output dimension
 
-# Module-level cached imports (populated lazily by _import_engine).
-_MemoryStore: Any = None
-_MemoryCard: Any = None
-_DaemonClient: Any = None
-_engine_import_attempted = False
-_engine_import_error: Exception | None = None
-
 
 class EngineError(RuntimeError):
-    """Raised when the Isotope Zero engine cannot be located or imported."""
+    """Raised when the Isotope Zero engine cannot be imported."""
 
 
 def _import_engine() -> None:
-    """Import MemoryStore / MemoryCard / DaemonClient from the engine by path.
+    """Import MemoryStore / MemoryCard / DaemonClient from the installed package.
 
     Idempotent; caches the classes at module level. Raises :class:`EngineError`
     with an actionable message if the engine cannot be imported — adapters
     surface this as a clean error rather than an ImportError traceback.
     """
     global _MemoryStore, _MemoryCard, _DaemonClient
-    global _engine_import_attempted, _engine_import_error
-    if _engine_import_attempted:
+    global _MODULE_LEVEL_IMPORT_ATTEMPTED, _engine_import_error
+    if _MODULE_LEVEL_IMPORT_ATTEMPTED:
         if _engine_import_error is not None:
             raise EngineError(
-                f"Isotope Zero engine not importable from {_ENGINE_PATH!r}: "
-                f"{_engine_import_error}\n"
-                "Set IZERO_ENGINE_PATH to the directory containing the "
-                "`isotope_zero` package (e.g. prototypes/daemon_v0.7)."
+                f"Isotope Zero engine not importable: {_engine_import_error}\n"
+                "Ensure isotope_zero >= 1.3.0 is installed (pip install isotope-zero)."
             )
         return
-    _engine_import_attempted = True
+    _MODULE_LEVEL_IMPORT_ATTEMPTED = True
     try:
-        if _ENGINE_PATH not in sys.path:
-            sys.path.insert(0, _ENGINE_PATH)
-        from isotope_zero.core.store import MemoryStore  # type: ignore
-        from isotope_zero.types import MemoryCard  # type: ignore
-        from isotope_zero.daemon.client import DaemonClient  # type: ignore
+        from isotope_zero.core.store import MemoryStore
+        from isotope_zero.types import MemoryCard
+        from isotope_zero.daemon.client import DaemonClient
 
         _MemoryStore = MemoryStore
         _MemoryCard = MemoryCard
         _DaemonClient = DaemonClient
-    except Exception as exc:  # pragma: no cover - path/env dependent
+    except Exception as exc:  # pragma: no cover - import-time dependent
         _engine_import_error = exc
         raise EngineError(
-            f"Isotope Zero engine not importable from {_ENGINE_PATH!r}: {exc}\n"
-            "Set IZERO_ENGINE_PATH to the directory containing the "
-            "`isotope_zero` package (e.g. prototypes/daemon_v0.7)."
+            f"Isotope Zero engine not importable: {exc}\n"
+            "Ensure isotope_zero >= 1.3.0 is installed (pip install isotope-zero)."
         ) from exc
 
 

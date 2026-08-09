@@ -70,6 +70,58 @@ release removes the crate and ships a **pure-Python wheel**.
 
 ---
 
+## [Unreleased] — REROUTE Phases 3–6
+
+### Phase 3 — Concurrency correctness overhaul (committed 28c29e6)
+- **Lock-free reads in `AdaptiveVectorSearch`.** Replaced the per-instance
+  `RLock` serializing every search with a plain `Lock` protecting only writes
+  (`add`/`remove`/`rebuild`). Search now uses per-call local NumPy buffers
+  (`scores`, `q_f32`, `q_i8`, `q_scale`) — zero shared mutable state under
+  the read path. The GIL is released by NumPy/BLAS during `np.dot`, so
+  concurrent readers scale. Stress: 6 concurrency tests pass, p99 < 1 ms at
+  10k cards.
+
+### Phase 4 — Close capability gap vs mem0 (committed 5782b68)
+- **Soft-delete audit trail + recovery.** The existing `archived REAL DEFAULT 0.0`
+  column on `memories` is the archive (not a separate table). `archive_card()`
+  marks `archived = 1.0` — excluded from `count()` but still returned by
+  `get()` (audit trail). New `recover_card(card_id)` restores `archived = 0.0`,
+  idempotent on live cards, returns `False` on nonexistent. Archive→count 0
+  →recover→count 1 verified. `MEM0_COMPARATIVE_AUDIT.md` §4.1 multi-tier
+  scoping, §4.3 hybrid retrieval, §4.4 audit trail all marked **CLOSED**.
+- Negation stemmer refinements: punctuation strip (`"east," → "east"`), bare
+  `s` before `es` (`"compiles" → "compile"`), doubled-consonant collapse
+  (`"running" → "run"`, `"stopped" → "stop"`). Applied identically to
+  `consolidation.py` and `native.py` (kept byte-for-byte in sync).
+
+### Phase 5 — Independent verification & narrative (committed 6254e34, 674ac1e)
+- `scripts/verify_perf.py`: reproducible benchmark. Measured p99 0.31 ms @
+  10k cards (claim < 1 ms **MET**), cold import 12.5 ms, RSS 186 MB.
+- `scripts/verify_negation.py`: 47-case audit. Result: precision 1.0, recall
+  1.0 (was 0.86), 0 false positives — all 3 false negatives fixed.
+- `docs/narrative.md`: honest developer narrative covering the v1.3.0
+  pure-Python pivot (Rust removal story), architecture, vs mem0, REROUTE
+  roadmap, credits.
+
+### Phase 6 — Documentation & repo hygiene (this commit)
+- **npm version lockstep.** `npm/package.json` 1.1.1 → 1.3.0 (matches
+  `pyproject.toml`). `npm/lib/ensure-env.js` reads version from
+  `package.json` at runtime (`pip install isotope-zero==${pkgVer}`) — no
+  hardcoded version found.
+- **Adapters path fix.** `adapters/izero_adapters/_engine.py` now imports
+  `MemoryStore`, `MemoryCard`, `DaemonClient` from the shipped
+  `isotope_zero` package (no more `prototypes/synthesis_v1.0` path
+  resolution). `EngineError` surfaces import failures cleanly.
+- **Docs sweep.** `docs/architecture.md`: replaced historical wheel matrix
+  with v1.3.0 superseding note; updated post-publish smoke to assert
+  `HAVE_NATIVE is False`. `README.md`/`npm/README.md`/`docs/cli.md`
+  verified free of current-tense Rust claims.
+- **Wheel verify.** Pure-Python `py3-none-any` wheel confirmed (no
+  `.so`/`.pyd`/`.dylib`, no `rust_bridge/`). `izero-plugin` bundle ships
+  25+ files at wheel root. Full suite: 378 passed / 0 failed (not perf).
+
+---
+
 ## [1.0.0] - 2026-08-05 — Grand Synthesis
 
 The synthesis release: every validated prototype phase is promoted into one
