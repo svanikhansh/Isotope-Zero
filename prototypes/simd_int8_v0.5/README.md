@@ -1,5 +1,13 @@
 # Native Int8 SIMD v0.5 Prototype — NEON/AVX-VNNI Kernel (Method 4)
 
+> **v1.3.0 superseding note — FROZEN RESEARCH ARTIFACT.** This directory is a
+> frozen record of the Rust-era prototype work. The int8 NEON/AVX-VNNI kernel
+> was **prototype-only and was never compiled into any shipped wheel**. Since
+> v1.3.0 the shipped `isotope-zero` wheel is pure-Python: the vector index runs
+> NumPy/BLAS (`matrix @ query`) at **every N**, `isotope_zero._native` no
+> longer exists, and the "NEON 5.8× faster than BLAS at N=500" result below is
+> a measured prototype finding, not a shipped capability.
+
 This folder is the **v0.5.0a1 prototype** of Isotope Zero implementing
 **Method 4: a native Rust int8 SIMD dot-product kernel**. It was scaffolded
 from `prototypes/quantization_v0.4/` (Method 2) and unites that method's 4×

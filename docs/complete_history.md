@@ -2,6 +2,15 @@
 
 > **Abstract.** Isotope Zero is a local-first cognitive memory layer for AI agents, developed across an eight-phase R&D lifecycle that runs from a pure-Python SQLite-WAL baseline (`python_v0.1`) to a unified `IsotopeZero` client (`synthesis_v1.0`). This chronicle documents the full arc: the victorious patterns that shipped — float32 BLAS GEMM as the vector index, a Rust/PyO3 negation bridge, a shared-memory embedding daemon, and an Ebbinghaus-decay-plus-graph consolidation model — and the hypotheses that were empirically refuted: BM25 lexical pre-filtering (recall collapse), 1-bit binary POPCNT (0.0% recall), and zero-copy mmap storage (no RSS benefit, SIGILL under concurrency). The durable, load-bearing conclusion is that the structural RSS floor is ~360 MB of `onnxruntime` (weights + arena + threads), against which the 10k-card vector matrix is a rounding error at ~15 MB; therefore no storage-tier optimization can breach the wall, and the only effective RSS lever is the embedding backend (centralized via the Phase 7A daemon). Research that refutes is treated here as first-class results, not failures to bury.
 
+> **v1.3.0 superseding note.** This chronicle is a frozen historical record of
+> the R&D arc; its "shipped" claims describe the program as it ran, not the
+> current package. In **v1.3.0 the Rust crate (`isotope_zero._native`) was
+> REMOVED** — the wheel is pure-Python. Vector search is NumPy/BLAS at every N
+> (`batch_cosine_similarity`), negation runs the pure-Python heuristic
+> (`are_negations`), and `HAVE_NATIVE` is a constant `False`; the int8 NEON
+> kernel (`simd_int8_v0.5`) was prototype-only and never compiled into a
+> shipped wheel. Historical claims are preserved verbatim below.
+
 ## Table of Contents
 
 - [Part I — The Core Research Evolution (Phases 1-8)](#part-i--the-core-research-evolution-phases-1-8)

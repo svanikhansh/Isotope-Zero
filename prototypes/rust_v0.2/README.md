@@ -6,6 +6,14 @@
 > reserved for the next architectural iteration; this archive can be inspected
 > or run independently.
 
+> **v1.3.0 superseding note.** The Smart Bridge was the shipped baseline from
+> v1.0.0 through v1.2.x, but the Rust crate (`isotope_zero._native`) was
+> **REMOVED in v1.3.0** — the shipped wheel is now pure-Python. The Smart
+> Bridge's load-bearing finding (zero-copy NumPy/BLAS for vector dot-products)
+> lives on in `core/native.py`: `batch_cosine_similarity()` runs NumPy/BLAS,
+> `are_negations()` runs the pure-Python heuristic, and `HAVE_NATIVE` is a
+> constant `False`. The Rust negation bridge described below is historical.
+
 ## Architecture — the Smart Bridge
 
 Phase 6 places each workload on its empirically-fastest path, chosen from

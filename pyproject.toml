@@ -97,6 +97,10 @@ Issues = "https://github.com/isotope-zero/isotope-zero/issues"
 # the tree-walking data_files in setup.py (pyproject data-files globs flatten
 # the hooks/ and skills/<name>/ subdirs the bundle needs).
 where = ["src"]
+# src/tests/__init__.py would otherwise make `tests` an auto-discoverable
+# top-level package and ship it in the wheel (bloat + a common importable name
+# collision). pytest runs via testpaths, so excluding it is pure hygiene.
+exclude = ["tests", "tests.*"]
 
 [tool.setuptools]
 license-files = ["LICENSE"]

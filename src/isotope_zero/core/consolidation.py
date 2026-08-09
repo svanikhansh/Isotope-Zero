@@ -57,7 +57,6 @@ from .store import MemoryStore
 from .decay import calculate_retention
 from ..tokens import estimate_tokens
 from ..types import ConsolidationReport, MemoryCard, now_ts
-from . import native
 # Phase 7C graph engine (a module of plain functions); see core/store.py for
 # the same aliasing rationale.
 from ..graph import relation_graph as graph
@@ -186,16 +185,15 @@ def _are_negations(a: str, b: str) -> bool:
 
 
 def _are_negations_guard(a: str, b: str) -> bool:
-    """Dispatch the negation guard through the native bridge when available.
+    """Guard: two facts asserting opposite polarities of the same fact never merge.
 
-    Tries ``native.are_negations`` (which itself falls back on native failure)
-    when the Rust core is present; otherwise — and for exact parity with the
-    v0.1 reference — evaluates the pure-Python ``_are_negations`` heuristic.
-    Both paths keep the SAME contract: polarity difference on a near-identical
-    core assertion means the two facts must never merge.
+    v1.3.0: the Rust ``isotope_zero._native`` bridge was removed and
+    ``HAVE_NATIVE`` became a constant ``False``, so the guard evaluates the
+    pure-Python ``_are_negations`` heuristic directly (the historic
+    ``native.are_negations`` port was bit-identical to it and added no
+    behavior). The contract is unchanged: polarity difference on a
+    near-identical core assertion means the two facts must never merge.
     """
-    if native.HAVE_NATIVE:
-        return native.are_negations(a, b)
     return _are_negations(a, b)
 
 

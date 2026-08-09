@@ -25,7 +25,7 @@ The launcher guarantees the Python runtime exists (see [How it works](#how-it-wo
 ## Requirements
 
 - **Node.js ≥ 18** (to run the launcher).
-- **Python 3.10+** must be available on your system — isotope-zero is a Python/Rust package. The launcher will locate or create a Python environment automatically; it does not bundle a Python interpreter.
+- **Python 3.10+** must be available on your system — isotope-zero is a pure-Python package (no compiled extension). The launcher will locate or create a Python environment automatically; it does not bundle a Python interpreter.
 
 If you have no Python at all, install one first:
 

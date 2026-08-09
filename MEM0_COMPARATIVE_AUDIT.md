@@ -6,9 +6,9 @@
 |-----------|------|--------------|--------|
 | **Cold Start Latency** | 2-5s (LLM client init, embedding API handshake, vector store connection, telemetry setup) | <50ms (SQLite WAL init, optional ONNX load, zero network calls) | **Isotope Zero (100x faster)** |
 | **Process RAM (RSS)** | 200MB-2GB (API-based: ~200MB; local models: 1-2GB for HuggingFace/Ollama) | ~360MB (onnxruntime) + ~15MB matrix @10k cards | **Isotope Zero (3-6x lower)** |
-| **Dependency Weight** | 150+ packages (qdrant-client, openai, httpx, posthog, sqlalchemy, protobuf, plus 22 optional vector stores, 24 LLM clients) | 5 core deps (numpy, onnxruntime, sqlite3, PyO3, multiprocessing stdlib) | **Isotope Zero (30x lighter)** |
+| **Dependency Weight** | 150+ packages (qdrant-client, openai, httpx, posthog, sqlalchemy, protobuf, plus 22 optional vector stores, 24 LLM clients) | pure-Python wheel — hard dep numpy + sqlite3/multiprocessing stdlib (onnxruntime optional; no PyO3/Rust) | **Isotope Zero (30x lighter)** |
 | **Retrieval Speed (p99 @10k)** | 50-200ms (network RTT to vector store + API latency + reranking) | 0.30ms (float32 BLAS via NumPy/Accelerate, zero-copy) | **Isotope Zero (165-665x faster)** |
-| **Fact Reconciliation** | V3 Additive Extraction (ADD-only) + MD5 hash dedup + entity linking. Legacy ADD/UPDATE/DELETE prompt unused. | Negation-aware heuristics (Rust PyO3, 22 patterns) + semantic consolidation (cosine ≥0.75) + Ebbinghaus decay pruning | **Tie** (LLM vs deterministic) |
+| **Fact Reconciliation** | V3 Additive Extraction (ADD-only) + MD5 hash dedup + entity linking. Legacy ADD/UPDATE/DELETE prompt unused. | Negation-aware heuristics (pure-Python, 22 patterns) + semantic consolidation (cosine ≥0.75) + Ebbinghaus decay pruning | **Tie** (LLM vs deterministic) |
 | **Graph Traversal** | Native entity-linking: spaCy NLP → secondary vector collection (`_entities`) → bidirectional `linked_memory_ids`. No E-R-E triplets. | `card_edges` table with semantic (cosine ≥0.75) + shared-tag (Jaccard) relations. BFS cluster detection (min_size=3, weight≥0.80). | **Mem0** (flexible entity model) |
 | **Multi-tenancy Model** | Soft isolation via payload metadata filtering (user_id/agent_id/run_id). No collection-per-tenant. Shared collection with row-level filtering. | Single-tenant by design. No built-in scoping. | **Mem0** (production multi-tenancy) |
 | **Network Dependencies** | 28 external services (Qdrant, Pinecone, OpenAI, Anthropic, PostHog telemetry, etc.). Every add/search requires API calls. | Zero external network calls for core operations. Optional daemon IPC via Unix domain socket. | **Isotope Zero (zero network deps)** |
@@ -33,7 +33,7 @@
 ```
 
 **Adaptation for Isotope Zero:**
-- Replace LLM extraction with **rule-based sentence segmentation** + **negation detection** (already implemented in Rust PyO3)
+- Replace LLM extraction with **rule-based sentence segmentation** + **negation detection** (already implemented as a pure-Python heuristic)
 - Preserve the schema contract but populate via deterministic NLP:
   - `id`: Sequential integer → UUID conversion
   - `text`: spaCy sentence boundary detection + negation-aware fact filtering
@@ -47,7 +47,7 @@ def extract_facts_deterministic(self, messages: list[dict]) -> list[dict]:
     """
     Deterministic fact extraction without LLM:
     1. Sentence segmentation (spaCy or nltk)
-    2. Negation detection (Rust PyO3 bridge)
+    2. Negation detection (pure-Python heuristic)
     3. Entity extraction (reuse existing extract_entities_batch)
     4. Linking via card_edges similarity
     """
@@ -56,7 +56,7 @@ def extract_facts_deterministic(self, messages: list[dict]) -> list[dict]:
         role = msg.get("role")
         content = msg.get("content", "")
         for sentence in self._sent_segment(content):
-            if not self._is_negated(sentence):  # Rust native bridge
+            if not self._is_negated(sentence):  # pure-Python negation heuristic
                 entities = self._extract_entities(sentence)
                 linked_ids = self._find_related_memories(entities)
                 facts.append({
@@ -310,7 +310,7 @@ def vector_search(self, query_vec, k=10):
 ---
 
 ### 3.4 Single-Binary Deployment
-**What it means:** Distribute as a single Python wheel or compiled binary (via PyO3/maturin). No runtime dependencies on external services.
+**What it means:** Distribute as a single pure-Python wheel (setuptools build since v1.3.0; the Rust/maturin compiled-extension path was removed). No runtime dependencies on external services.
 
 **Quantified advantage:**
 - **Artifact size:** 15MB (wheel with onnxruntime) vs 500MB+ (Docker image with Qdrant + dependencies)
@@ -386,7 +386,7 @@ Hybrid retrieval score:
 **Specification:**
 1. **Deterministic extraction pipeline:**
    - Sentence segmentation (spaCy or nltk, already optional dependency)
-   - Negation detection (Rust PyO3 native bridge, already implemented)
+   - Negation detection (pure-Python heuristic, already implemented)
    - Entity extraction (reuse existing `extract_entities_batch`)
    - Linking via `card_edges` similarity
 
