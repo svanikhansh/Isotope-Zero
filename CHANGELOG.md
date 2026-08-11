@@ -12,6 +12,44 @@ zero-dependency paths that keep the package runnable with nothing installed).
 
 ---
 
+## [1.3.1] — Redesigned CLI + ocean-blue dashboard
+
+Rebuilt the CLI on a modular typer architecture with a unified void-black /
+white / ocean-blue design system (`#90CAF9` / `#2196F3` / `#1565C0` /
+`#0D47A1`) applied consistently across the terminal TUI, the browser
+dashboard, and every rich/plain/JSON renderer. The browser dashboard is now a
+real React 19 build (Vite + Tailwind v4) served locally by `izero serve` over
+Server-Sent Events, with an inline stdlib fallback page when `web/dist` is
+absent — still read-only, local-first, and offline.
+
+### Added
+- **Modular CLI surface** — `src/isotope_zero/cli/` reorganized into
+  `commands/` (add, recall, search, list, get, forget, touch, stats, tags,
+  inspect, dry-run-consolidation, dashboard, serve, hook, plugin, menu),
+  `core/` (context, hooks, completers), `render/` (rich/plain/json/legacy
+  renderers), and `ui/` (theme, glyphs, components). Entry point
+  `isotope_zero.cli.main:main` (`izero` console script unchanged).
+- **`izero serve`** — localhost browser dashboard: React build served at
+  `web/dist` with SPA fallback, `/api/state` JSON + `/api/events` SSE (live
+  refresh), `--open` to auto-launch the browser, `--port` / `--interval`.
+- **Ocean-blue design system** — void black (`#000000`) + white + ocean-blue
+  accents in the Rich TUI theme (`izero.*` styles), the React dashboard, and
+  the inline fallback page; backward-compatible CSS aliases (`--sage`,
+  `--moss`, `--forest` → ocean scale) keep prior custom themes working.
+- **npm launcher now routes to the new CLI** — `npm/bin/izero.js` delegates to
+  `python -m isotope_zero.cli.main` (was `cli.debug`).
+
+### Fixed
+- `src/isotope_zero/cli/dash/web.py` — orphaned inline-page body deleted
+  (module-level `IndentationError` broke `import` / `izero serve`).
+
+### Changed
+- **Dependencies** — `web/` upgraded to latest majors: React 19.2.8, recharts
+  3.10.1, framer-motion 13.1.0, lucide-react 1.31.0, tailwind-merge 3.6.0.
+  Python runtime dependencies unchanged (still stdlib + typer + rich).
+
+---
+
 ## [1.3.0] — Pure-Python wheel (Rust native core removed)
 
 The shipped Rust crate paid the full native-build cost (cibuildwheel ×3–4
