@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  /* ─ Void black / white / ocean blue palette (@theme tokens = utility classes) ─ */
+  --color-void: #000000;
+  --color-ink: #ffffff;
+  --color-ocean-light: #90CAF9;
+  --color-ocean: #2196F3;
+  --color-ocean-dark: #1565C0;
+  --color-ocean-deep: #0D47A1;
+  --color-charcoal: #1A1A1A;
+
+  --color-success: #90CAF9;
+  --color-warning: #FFB74D;
+  --color-error: #EF5350;
+  --color-info: #4FC3F7;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Backward-compatible aliases — keep the old sage/moss/forest/charcoal semantic
+     token names pointing at the new ocean-blue scale so existing components recolor
+     without a sweep. Semantic mapping:
+       sage     → ocean-light  (accent / active / highlights)
+       moss     → steel-blue   (muted / secondary / labels)
+       forest   → ocean-deep   (gradient endpoint / elevated)
+       charcoal → charcoal     (surface background / borders)
+  */
+  --color-sage: #90CAF9;
+  --color-moss: #7B93B0;
+  --color-forest: #0D47A1;
+}
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0A0A0A;
+  --card-foreground: #ffffff;
+  --muted: #121212;
+  --muted-foreground: #90CAF9;
+  --border: rgba(144, 202, 249, 0.12);
+  --border-active: rgba(144, 202, 249, 0.35);
+  --glass-bg: rgba(26, 26, 26, 0.55);
+  --glass-border: rgba(144, 202, 249, 0.15);
+
+  /* Backward-compatible semantic aliases (raw CSS vars used directly via var(--sage) etc.) */
+  --sage: #90CAF9;
+  --moss: #7B93B0;
+  --forest: #0D47A1;
+  --charcoal: #1A1A1A;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+@theme { --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
+
+/* scrollbar that fits the palette */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #050505; }
+::-webkit-scrollbar-thumb { background: #1A1A1A; border-radius: 6px; border: 2px solid #050505; }
+::-webkit-scrollbar-thumb:hover { background: #2196F3; }
+
+/* shimmer skeleton keyframes */
+@keyframes izero-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes izero-pop {
+  0% { transform: scale(0) rotate(-12deg); opacity: 0; }
+  60% { transform: scale(1.12) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes izero-slide-down {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes izero-spin { to { transform: rotate(360deg); } }

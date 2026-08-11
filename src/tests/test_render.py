@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import io
 
-from isotope_zero.cli import render
+from isotope_zero.cli.render import legacy as render
 
 
 # --------------------------------------------------------------------------- #

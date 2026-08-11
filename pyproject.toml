@@ -80,7 +80,7 @@ dev = [
 ]
 
 [project.scripts]
-izero = "isotope_zero.cli.debug:main"
+izero = "isotope_zero.cli.main:main"
 izero-mcp = "isotope_zero.mcp.server:main"
 izero-benchmark = "isotope_zero.eval.benchmark:main"
 

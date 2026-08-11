@@ -395,7 +395,7 @@ def _cmd_add(client: IsotopeZero, fact: str, evidence: str, tags: list[str],
             payload["timestamp"] = card.timestamp
         print(json.dumps(payload, indent=2))
         return 0
-    from .render import format_add
+    from .render.legacy import format_add
     print(format_add(cid, not existed))
     return 0
 
@@ -424,7 +424,7 @@ def _cmd_active(client: IsotopeZero, top: int, tags: list[str],
         print(json.dumps(rows, indent=2))
         return 0
 
-    from .render import format_hits
+    from .render.legacy import format_hits, format_list_rows, format_card, format_forget, format_touch, format_tags, format_stats
     # `active` ranks by vitality, not score. In verbose mode the technical
     # columns need a real timestamp (for age) and a score slot (showing
     # vitality) — build hit-shaped dicts from the kept (vitality, card) pairs.
@@ -451,7 +451,7 @@ def _cmd_recall(client: IsotopeZero, query: str, k: int, alpha: float | None,
         out = [dict(h, age_days=_age_days(h["timestamp"], now)) for h in hits]
         print(json.dumps(out, indent=2))
         return 0
-    from .render import format_hits
+    from .render.legacy import format_hits, format_list_rows, format_card, format_forget, format_touch, format_tags, format_stats
     print(format_hits(hits, now, verbose=verbose))
     return 0
 
@@ -468,7 +468,7 @@ def _cmd_search(client: IsotopeZero, query: str, k: int, alpha: float | None,
         out = [dict(h, age_days=_age_days(h["timestamp"], now)) for h in hits]
         print(json.dumps(out, indent=2))
         return 0
-    from .render import format_hits
+    from .render.legacy import format_hits, format_list_rows, format_card, format_forget, format_touch, format_tags, format_stats
     print(format_hits(hits, now, verbose=verbose))
     return 0
 
@@ -500,7 +500,7 @@ def _cmd_list(client: IsotopeZero, tags: list[str], limit: int,
         print(json.dumps(rows, indent=2))
         return 0
 
-    from .render import format_list_rows
+    from .render.legacy import format_list_rows
     print(format_list_rows(rows, now, verbose=verbose, filtered=bool(tags)))
     return 0
 
@@ -535,7 +535,7 @@ def _cmd_get(client: IsotopeZero, card_id: str, as_json: bool,
         print(json.dumps(payload, indent=2))
         return 0
 
-    from .render import format_card
+    from .render.legacy import format_card
     print(
         format_card(
             card.id, card.fact, card.evidence, list(card.tags),
@@ -559,7 +559,7 @@ def _cmd_forget(client: IsotopeZero, card_id: str, yes: bool) -> int:
         return 1
     deleted = client.store.delete(card_id)
     if deleted:
-        from .render import format_forget
+        from .render.legacy import format_forget
         print(format_forget(card_id))
         return 0
     print(f"no memory with id: {card_id}", file=sys.stderr)
@@ -573,7 +573,7 @@ def _cmd_touch(client: IsotopeZero, card_id: str) -> int:
     """Record a recall on a card; print refreshed or not-found."""
     ok = client.touch(card_id)
     if ok:
-        from .render import format_touch
+        from .render.legacy import format_touch
         print(format_touch(card_id))
         return 0
     print(f"no memory with id: {card_id}", file=sys.stderr)
@@ -595,7 +595,7 @@ def _cmd_tags(client: IsotopeZero, as_json: bool, verbose: bool = False) -> int:
         print(json.dumps(dict(ordered), indent=2))
         return 0
 
-    from .render import format_tags
+    from .render.legacy import format_tags
     print(format_tags(dict(ordered), verbose=verbose))
     return 0
 
@@ -652,7 +652,7 @@ def _cmd_stats(client: IsotopeZero, as_json: bool, verbose: bool = False) -> int
         print(json.dumps(payload, indent=2))
         return 0
 
-    from .render import format_stats
+    from .render.legacy import format_stats
     print(
         format_stats(count, size_bytes, mode, tokens, tag_dist, histogram,
                      verbose=verbose)

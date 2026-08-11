@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .types import ActionType, ActionResult, ConsolidationReport, MemoryCard, QueryHit, QueryResult, now_ts
 from .tokens import estimate_tokens
+from .client import IsotopeZero
 
 __version__ = "1.3.0"
 
@@ -19,5 +20,6 @@ __all__ = [
     "QueryResult",
     "now_ts",
     "estimate_tokens",
+    "IsotopeZero",
     "__version__",
 ]

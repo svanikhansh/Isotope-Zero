@@ -42,7 +42,7 @@ try {
 
 const child = spawn(
   resolved.python,
-  ["-m", "isotope_zero.cli.debug", ...ARGS],
+  ["-m", "isotope_zero.cli.main", ...ARGS],
   { stdio: "inherit" },
 );
 child.on("exit", (code, signal) => {
