@@ -12,6 +12,26 @@ zero-dependency paths that keep the package runnable with nothing installed).
 
 ---
 
+## [1.3.2] — Fix published-wheel deps (typer + rich)
+
+**1.3.1 was a broken publish** — the wheel that hit PyPI/npm declared only
+`numpy` as a hard dependency, but the redesigned `izero` CLI is Typer + Rich
+based. A clean `pip install isotope-zero` then `izero` crashed with
+`ModuleNotFoundError: No module named 'typer'`. 1.3.2 re-declares the runtime
+deps so the console script works out of the box.
+
+### Fixed
+- **`pyproject.toml` runtime deps** — added `typer>=0.9` and `rich>=13.0` to
+  `[project.dependencies]`. `rich` is imported lazily inside the TUI/renderers
+  so the core library stays lightweight; both are hard deps for the `izero`
+  console script and CLI tests.
+
+### Changed
+- Version bumped `1.3.1 → 1.3.2` (npm launcher + web in lockstep; PyPI/npm
+  are immutable so the broken 1.3.1 stays published as-is, 1.3.2 supersedes).
+
+---
+
 ## [1.3.1] — Redesigned CLI + ocean-blue dashboard
 
 Rebuilt the CLI on a modular typer architecture with a unified void-black /
