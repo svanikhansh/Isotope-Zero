@@ -11,7 +11,7 @@ dist/
 .venv/
 venv/
 
-# --- tools ---
+# --- Testing / Linting ---
 .pytest_cache/
 .hypothesis/
 .mypy_cache/
@@ -19,23 +19,20 @@ venv/
 .coverage
 htmlcov/
 
-# --- runtime / local data ---
+# --- Runtime / Local Data ---
 *.db
 *.sqlite
 *.sqlite3
 .isotope_zero_cache/
 
-# --- Rust (Phase 6 native core) ---
+# --- Native Extensions (Phase 6) ---
 target/
-# compiled native extension is a build artifact (maturin develop regenerates it).
-# Match at ANY depth so it stays ignored after the prototype is archived under
-# prototypes/<version>/isotope_zero/ — not just at the repo root.
 **/_native*.so
 **/_native*.dylib
 **/*.so
 **/*.dylib
 
-# --- npm (npm/ launcher package) ---
+# --- Node / npm ---
 node_modules/
 npm/.npm/
 npm/package-lock.json
@@ -44,13 +41,9 @@ npm/package-lock.json
 # --- OS ---
 .DS_Store
 
-# --- local-only harness config (not part of the published package) ---
+# --- Harness / Local Config ---
 .claude/
 
-# --- pre-existing scaffold repo checked in by hand ---
+# --- Legacy / Scaffold / Third-Party ---
 Isotope Zero/
-
-# --- vendored third-party reference clone (mem0 comparative audit) ---
-# A full upstream checkout used only for the MEM0_COMPARATIVE_AUDIT; never
-# commit it (99 MB of third-party code). The audit report lives in the repo.
 mem0_repo/
