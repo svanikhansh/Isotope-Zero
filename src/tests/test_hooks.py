@@ -426,6 +426,12 @@ class TestFreshInstallPersistence:
         user home), runs the capture, then reopens the resolved path in a fresh
         process to prove the card survived the subprocess boundary."""
         monkeypatch.setenv("HOME", str(tmp_path))
+        # Windows: ntpath.expanduser resolves ``~`` from USERPROFILE (then
+        # HOMEDRIVE+HOMEPATH) and *ignores* HOME, so the sandbox must pin those
+        # too or the capture lands in the real user profile instead of tmp_path.
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("HOMEDRIVE", raising=False)
+        monkeypatch.delenv("HOMEPATH", raising=False)
         monkeypatch.delenv("ISOTOPE_ZERO_DB", raising=False)
         # The default path the hook engine will resolve, under the temp HOME.
         expected_path = str(tmp_path / ".isotope_zero" / "isotope_zero.db")

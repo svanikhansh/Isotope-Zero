@@ -30,7 +30,7 @@ def register(app: typer.Typer) -> None:
         ctx: typer.Context,
         event: Annotated[str, typer.Argument(help="Hook event type (session_start, user_prompt, file_read, block_memory_write, bash_output, stop, pre_compact)")],
         db: str = db_option(),
-        json: bool = json_option(),
+        as_json: bool = json_option(),
         verbose: bool = verbose_option(),
         no_color: bool = no_color_option(),
     ):
@@ -40,7 +40,7 @@ def register(app: typer.Typer) -> None:
         hook output to stdout. This is the single entrypoint used by
         the bash hook wrappers in integrations/izero-plugin/hooks/.
         """
-        cli_ctx = inject_context(ctx, db, json, verbose, no_color)
+        cli_ctx = inject_context(ctx, db, as_json, verbose, no_color)
         renderer = get_renderer_from_context(cli_ctx)
 
         # Read hook payload from stdin

@@ -16,15 +16,25 @@ pattern the dashboard already uses (``cli/dashboard.py``):
         imports with zero optional deps.
 
     plain (stdlib only — the fallback when ``rich`` is absent)
-        A numbered list (``1) add a memory`` … ``0) exit``); type the number +
-        enter to run. Works in every terminal, no dependencies.
+        On a real terminal it offers the SAME arrow-key list (raw-mode termios
+        + a full-screen ANSI repaint per keypress), so the navigation feel does
+        not depend on rich being installed. When stdin isn't a TTY (piped /
+        scripted) or termios is unavailable (Windows), it degrades to the
+        numbered list (``1) add a memory`` … ``0) exit``) — type the number +
+        enter to run.
+
+Both transports support arrow keys (↑/↓, plus Home/End and PgUp/PgDn), and the
+entry list scrolls when it exceeds the terminal height — a long list stays fully
+reachable on a short window, matching the interactive-list feel of Claude Code's
+command palette.
 
 The menu **invents no store logic** — every entry calls an existing ``_cmd_*``
-helper from ``debug.py`` (or ``run_dashboard``) with prompted arguments matching the
-exact shapes ``main()`` already passes. It opens one long-lived ``IsotopeZero``
-client across read/write actions (``add`` … ``stats``) and reuses the existing
-per-call open/close path for ``inspect`` / ``dry-run-consolidation`` (which take a
-raw ``MemoryStore``) and yields to ``run_dashboard`` (which owns its own client).
+helper from ``debug.py`` (or the live TUI dashboard ``run_live``) with prompted
+arguments matching the exact shapes ``main()`` already passes. It opens one
+long-lived ``IsotopeZero`` client across read/write actions (``add`` … ``stats``)
+and reuses the existing per-call open/close path for ``inspect`` /
+``dry-run-consolidation`` (which take a raw ``MemoryStore``) and yields to
+``run_live`` (the same surface as ``izero dashboard``) with the menu's open client.
 
 Calling :func:`run_menu` with ``once=True`` prints the banner + static menu text and
 returns 0 — the deterministic path the tests exercise (no live loop, no ``input``).
@@ -57,7 +67,7 @@ from .debug import (
     _parse_tags,
     _resolve_db_path,
 )
-from .dashboard import run_dashboard
+from .dash.tui import run_live
 
 
 def _ensure_parent_dir(db_path: str) -> None:
@@ -87,12 +97,18 @@ def _prompt(label: str, default: str | None = None) -> str | None:
     Returns ``""`` for an empty Enter, the ``default`` (if given) for an empty
     Enter too, and ``None`` for EOF/Ctrl-D (caller treats None as cancel — a
     required prompt must never spin forever when the user can't type).
+
+    ``OSError`` (e.g. ``Errno 5`` "Input/output error" — the terminal can throw
+    this after a full-screen surface like the dashboard hands the tty back, or
+    when stdin was closed out from under us) is treated the same as EOF: the
+    menu can't recover a live tty, so it quits cleanly instead of dumping a
+    traceback mid-loop.
     """
     suffix = f" [{default}]" if default is not None else ""
     print(f"{label}{suffix}: ", end="", flush=True)
     try:
         line = sys.stdin.readline()
-    except (EOFError, KeyboardInterrupt):
+    except (EOFError, KeyboardInterrupt, OSError):
         return None
     if line == "":  # EOF
         return None
@@ -247,8 +263,12 @@ def _runner_dry_run(db_path: str) -> Callable[[IsotopeZero], int]:
 
 
 def _runner_dashboard(db_path: str) -> Callable[[IsotopeZero], int]:
-    # run_dashboard owns its own client + terminal; yield to it.
-    return lambda _client: run_dashboard(db_path, 2.0, False)
+    # The live TUI dashboard (the same surface ``izero dashboard`` renders —
+    # KPI row, vitality bar, tags, recent + decay tables) owns its own terminal
+    # + refresh loop. It consumes the menu's already-open client's store (the
+    # menu opened it with create=True, so the store exists by the time the user
+    # picks an entry) and takes over the alternate screen until the user quits.
+    return lambda client: run_live(client.store, db_path, interval=2.0, once=False)
 
 
 def _parse_float(s: str) -> float | None:
@@ -318,11 +338,154 @@ def _numbered_menu(entries: list[tuple[str, Any]]) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Shared interactive-list helpers (both transports)
+# --------------------------------------------------------------------------- #
+def _is_real_tty(stream) -> bool:
+    """True when ``stream`` is an actual terminal (not a pipe / test double).
+
+    ``sys.stdin.isatty()`` can be monkeypatched (the menu tests fake it), so
+    probe the underlying fd directly — pytest's captured stdin is /dev/null or
+    a pipe and correctly reports False here, keeping the numbered path under
+    test.
+    """
+    try:
+        return os.isatty(stream.fileno())
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def _apply_key(seq: str, sel: int, n: int, page: int) -> int:
+    """Map a decoded key (a single char or an escape tail) to a new selection.
+
+    Unknown keys leave ``sel`` unchanged, so a stray byte (e.g. ESC from a
+    lone keypress) can't jump the highlight. ``page`` is the PgUp/PgDn step.
+    """
+    if seq in ("[A", "OA"):  # ↑ (CSI + SS3 forms)
+        return (sel - 1) % n
+    if seq in ("[B", "OB"):  # ↓
+        return (sel + 1) % n
+    if seq in ("[H", "OH", "[1~", "[7~"):  # Home
+        return 0
+    if seq in ("[F", "OF", "[4~", "[8~"):  # End
+        return n - 1
+    if seq == "[5~":  # PgUp
+        return max(0, sel - page)
+    if seq == "[6~":  # PgDn
+        return min(n - 1, sel + page)
+    return sel
+
+
+def _scroll_window(sel: int, top: int, height: int, n: int) -> int:
+    """Return the viewport ``top`` that keeps ``sel`` visible, scrolling as needed.
+
+    When ``height`` already fits every entry there's nothing to scroll (top 0);
+    otherwise the window slides so ``sel`` never leaves it. This is what makes
+    a long entry list scrollable on a short terminal.
+    """
+    if height >= n:
+        return 0
+    if sel < top:
+        return sel
+    if sel >= top + height:
+        return sel - height + 1
+    return top
+
+
+# --------------------------------------------------------------------------- #
 # Transports
 # --------------------------------------------------------------------------- #
+def _run_plain_interactive(
+    db_path: str,
+    entries: list[tuple[str, Callable[[IsotopeZero], int]]],
+    banner: str,
+) -> int:
+    """Arrow-key menu on a real terminal without rich.
+
+    Raw-mode termios + a full-screen repaint per keypress (clear + redraw, no
+    cursor addressing needed for a list) — the same transport feel as
+    ``_run_rich`` with zero optional deps. This is what the menu becomes on a
+    POSIX TTY when rich is absent, so the arrow-key experience doesn't depend
+    on rich being installed. Reuses the shared key decoder + viewport scrolling.
+    """
+    import termios
+    import tty
+
+    client = _open_client(db_path, create=True)
+    sel = 0
+    top = 0
+    n = len(entries)
+    fd = sys.stdin.fileno()
+    old = None
+    try:
+        old = termios.tcgetattr(fd)
+        tty.setraw(fd)
+        try:
+            height = max(3, os.get_terminal_size().lines - 9)
+        except (OSError, ValueError):
+            height = 12
+        while True:
+            top = _scroll_window(sel, top, height, n)
+            out = ["\033[2J\033[H", banner, "", "What would you like to do?"]
+            for i in range(top, min(top + height, n)):
+                marker = "❯" if i == sel else " "
+                out.append(f"  {marker} {entries[i][0]}")
+            out += ["", "↑↓ navigate · enter to run · q to quit"]
+            sys.stdout.write("\n".join(out) + "\n")
+            sys.stdout.flush()
+            b = os.read(fd, 1)
+            if b in (b"", b"\x04"):  # EOF / Ctrl-D → quit cleanly
+                return 0
+            if b in (b"q", b"Q", b"\x03"):  # q / Ctrl-C
+                return 0
+            if b in (b"\r", b"\n"):
+                label, runner = entries[sel]
+                # Back to cooked mode for the action: the runner prompts via
+                # readline, which needs echo + line buffering.
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                if runner is not None:
+                    try:
+                        runner(client)
+                    except KeyboardInterrupt:
+                        pass
+                    print()
+                else:
+                    return 0
+                tty.setraw(fd)
+            elif b == b"\x1b":
+                sel = _apply_key(_escape_tail(fd), sel, n, page=max(5, height))
+            else:
+                sel = _apply_key(b.decode("latin-1"), sel, n, page=max(5, height))
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        if old is not None:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except (OSError, AttributeError, ValueError):
+                pass
+        client.close()
+
+
 def _run_plain(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], int]]],
               banner: str) -> int:
-    """Stdlib numbered-menu loop. Type a number + enter to run; 0/q to quit."""
+    """Stdlib menu transport (no rich).
+
+    On a real terminal (POSIX, termios available) this runs the arrow-key
+    ``_run_plain_interactive`` list so navigation feels the same as the rich
+    transport; everywhere else — piped stdin, tests, Windows — it falls back to
+    the numbered list (type a number + enter to run; 0/q to quit).
+    """
+    if _is_real_tty(sys.stdin) and _is_real_tty(sys.stdout):
+        try:
+            import termios  # noqa: F401  (presence probe)
+            import tty  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            return _run_plain_interactive(db_path, entries, banner)
+
+    # Numbered fallback (piped stdin / Windows / tests). Type a number + enter
+    # to run; 0/q to quit.
     # create=True mirrors _run_client's default: a missing DB is treated as an
     # empty store (so reads say "no cards", and `add` creates the file on first
     # write). NOTE: this also creates an empty DB file the moment the menu opens
@@ -367,18 +530,46 @@ def _run_plain(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], in
         client.close()
 
 
-def _escape_tail() -> str:
-    """Read the ``[A..D`` tail of an arrow-key escape sequence, non-blocking.
+def _escape_tail(fd: int | None = None) -> str:
+    """Read the tail of an escape sequence following ESC, non-blocking.
 
     In raw mode a lone Esc delivers just ``\\x1b``; blocking on ``read(2)`` would
     freeze the menu until the user types more keys. Arrow keys deliver their tail
     as a burst, so a short ``select`` poll distinguishes them and a lone Esc is
     simply ignored.
+
+    Handles both CSI (``[A``-``[D``, ``[H``/``[F``, ``[5~``/``[6~``) and SS3
+    (``OA``-``OD``) forms. Terminals in application-cursor mode (iTerm2, tmux,
+    some SSH shells) send the SS3 form — a reader that only knew ``[A``/``[B``
+    silently ignored those presses, so the highlight never moved.
+
+    Reads via ``os.read`` — NOT ``sys.stdin.read``. ``sys.stdin`` is a buffered
+    ``TextIOWrapper`` whose ``read(1)`` read-aheads: after returning the ``\\x1b``
+    it pulls the ``[B`` tail into Python's user-space buffer, so the follow-up
+    ``select`` on the fd sees nothing and the arrow is dropped. ``os.read`` reads
+    straight from the fd, leaving the tail in the kernel buffer where ``select``
+    sees it.
     """
-    r, _, _ = select.select([sys.stdin], [], [], 0.1)
+    fd = fd if fd is not None else sys.stdin.fileno()
+    r, _, _ = select.select([fd], [], [], 0.1)
     if not r:
         return ""
-    return sys.stdin.read(2)
+    first = os.read(fd, 1).decode("latin-1")
+    if first == "O":  # SS3 (ESC O A/B/C/D) — exactly one final byte follows
+        r, _, _ = select.select([fd], [], [], 0.05)
+        return "O" + (os.read(fd, 1).decode("latin-1") if r else "")
+    if first == "[":  # CSI (ESC [ <params> <final>) — final byte is 0x40-0x7E
+        tail = "["
+        while True:
+            r, _, _ = select.select([fd], [], [], 0.05)
+            if not r:
+                break
+            b = os.read(fd, 1).decode("latin-1")
+            tail += b
+            if b >= "@":  # "A".."~" — the sequence is complete
+                break
+        return tail
+    return first  # ESC+letter (option combos) or a stray byte
 
 
 def _run_rich(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], int]]],
@@ -393,13 +584,23 @@ def _run_rich(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], int
 
     client = _open_client(db_path, create=True)
     sel = 0
+    top = 0
     n = len(entries)
+    try:
+        size = os.get_terminal_size()
+        height = max(3, size.lines - 9)  # banner(5) + title + hint leave ~9 rows
+        page = max(5, size.lines // 2)
+    except (OSError, ValueError):
+        height = 12
+        page = 10
 
     def _frame() -> Text:
+        nonlocal top
+        top = _scroll_window(sel, top, height, n)
         body = banner + "\n\nWhat would you like to do?\n"
-        for i, (label, _) in enumerate(entries):
+        for i in range(top, min(top + height, n)):
             marker = "❯" if i == sel else " "
-            body += f"\n  {marker} {label}"
+            body += f"\n  {marker} {entries[i][0]}"
         body += "\n\n↑↓ navigate · enter to run · q to quit"
         return Text(body)
 
@@ -417,9 +618,9 @@ def _run_rich(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], int
         # and, worse, hold the render lock while the action runs.
         with Live(_frame(), console=console, screen=True, auto_refresh=False) as live:
             # Raw-mode key reading via termios/tty (POSIX-only; any failure here
-            # falls back to the numbered plain transport). Arrow keys navigate;
-            # q / Ctrl-C / Ctrl-D quit. No numbers are handled — the on-screen
-            # hint only advertises the arrows.
+            # falls back to the plain transport). Arrows (both CSI + SS3 forms),
+            # Home/End and PgUp/PgDn navigate; q / Ctrl-C / Ctrl-D quit. No
+            # numbers are handled — the on-screen hint only advertises the arrows.
             import termios
             import tty
 
@@ -429,8 +630,12 @@ def _run_rich(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], int
                 tty.setraw(fd)
                 while True:
                     live.update(_frame(), refresh=True)
-                    ch = sys.stdin.read(1)
-                    if ch == "\r" or ch == "\n":
+                    # os.read (not sys.stdin.read): the TextIOWrapper's read(1)
+                    # read-aheads the escape tail past the '\x1b', starving the
+                    # follow-up select in _escape_tail and dropping every arrow
+                    # key. os.read reads the raw fd, so the tail stays visible.
+                    b = os.read(fd, 1)
+                    if b in (b"\r", b"\n"):
                         label, runner = entries[sel]
                         # Leave cooked mode + the alternate screen before running
                         # the action: rich's 30fps Live refresh would otherwise
@@ -450,15 +655,10 @@ def _run_rich(db_path: str, entries: list[tuple[str, Callable[[IsotopeZero], int
                             return 0
                         tty.setraw(fd)
                         live.start()
-                    elif ch == "\x1b":  # escape sequence (arrow keys)
-                        # Read the rest of the arrow sequence: [A/B/C/D
-                        seq = _escape_tail()
-                        if seq == "[A":  # up
-                            sel = (sel - 1) % n
-                        elif seq == "[B":  # down
-                            sel = (sel + 1) % n
-                    elif ch in ("q", "Q", "\x03", "\x04"):  # q / Ctrl-C / Ctrl-D
-                        return 0
+                    elif b == b"\x1b":  # escape sequence (arrows / home / pg)
+                        sel = _apply_key(_escape_tail(fd), sel, n, page)
+                    else:
+                        sel = _apply_key(b.decode("latin-1"), sel, n, page)
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
     except (KeyboardInterrupt, Exception):
@@ -484,8 +684,10 @@ def run_menu(db_path: str, once: bool = False) -> int:
 
     ``once`` prints the banner + a static menu listing and exits 0 (scriptable;
     the deterministic path the tests exercise — no live loop, no ``input``).
-    Otherwise runs the rich arrow-key menu when ``rich`` is importable, else the
-    stdlib numbered menu. Returns 0 on clean exit / Ctrl-C.
+    Otherwise runs the rich arrow-key menu when ``rich`` is importable; without
+    rich it runs the arrow-key stdlib transport on a real terminal (``_run_plain``
+    auto-promotes), and only degrades to the numbered list when stdin isn't a TTY
+    or termios is unavailable (Windows). Returns 0 on clean exit / Ctrl-C.
     """
     # The store is created on first write (_open_client(create=True)); make sure
     # its parent directory exists so a brand-new default path actually works.

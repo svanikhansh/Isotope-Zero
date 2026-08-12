@@ -1,0 +1,19 @@
+# Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Local Cache
+.isotope_zero_cache/
+
+# Tests
+src/tests/
+
+# Native
+target/
+**/*.so
+**/*.dylib

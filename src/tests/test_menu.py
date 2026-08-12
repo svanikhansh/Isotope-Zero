@@ -44,10 +44,19 @@ def fake_stdin(monkeypatch, lines):
         except StopIteration:
             return ""  # EOF → _prompt returns ""
 
+    def _no_fileno():
+        raise OSError(9, "Bad file descriptor")
+
     monkeypatch.setattr("sys.stdin.readline", _readline)
     # _confirm checks isatty(); force False so it doesn't try to prompt interactively
     # in a way that bypasses our readline. The menu's _prompt uses readline directly.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # _is_real_tty probes os.isatty(fileno()) to decide whether _run_plain should
+    # promote to the raw-mode arrow-key transport. Make fileno() raise so the
+    # numbered path is exercised even when pytest runs on a real TTY — otherwise
+    # _run_plain_interactive would setraw() the terminal and block on real input
+    # that fake_stdin's readline never provides.
+    monkeypatch.setattr("sys.stdin.fileno", _no_fileno)
 
 
 # --------------------------------------------------------------------------- #
@@ -196,6 +205,44 @@ def test_recall_runner_empty_query_cancels(monkeypatch):
     assert rc == 1  # cancelled
 
 
+def test_dashboard_runner_uses_live_tui(monkeypatch):
+    """Menu item 12 delegates to ``run_live`` (the polished multi-panel TUI
+    ``izero dashboard`` renders) with the menu client's store — NOT the legacy
+    single-panel ``dashboard.run_dashboard``."""
+    captured = {}
+
+    def fake_run_live(store, db_path, interval=2.0, once=False):
+        captured["store"] = store
+        captured["db_path"] = db_path
+        captured["interval"] = interval
+        captured["once"] = once
+        return 7  # any non-trivial rc the dashboard returns on exit
+
+    monkeypatch.setattr(menu_mod, "run_live", fake_run_live)
+    client = menu_mod._open_client(":memory:", create=True)
+    try:
+        runner = menu_mod._runner_dashboard("/some/db/path.db")
+        rc = runner(client)
+    finally:
+        client.close()
+    assert rc == 7
+    assert captured["store"] is client.store  # reuses the menu's open store
+    assert captured["db_path"] == "/some/db/path.db"
+    assert captured["interval"] == 2.0
+    assert captured.get("once") is False
+
+
+def test_prompt_oserror_treated_as_eof_not_crash(monkeypatch):
+    """Backing out of a full-screen surface can leave stdin read raising
+    ``OSError: [Errno 5] Input/output error`` — ``_prompt`` must treat that like
+    EOF (return None → caller cancels/quits) instead of dumping a traceback."""
+    def _readline(*a, **k):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr("sys.stdin.readline", _readline)
+    assert menu_mod._prompt("anything") is None
+
+
 # --------------------------------------------------------------------------- #
 # 4. stdlib numbered fallback works when rich is absent
 # --------------------------------------------------------------------------- #
@@ -282,3 +329,74 @@ def test_banner_first_run_vs_welcome_back():
     back = menu_mod._banner("/x.db", count=7)
     assert "welcome back" in back
     assert "7 cards" in back
+
+
+# --------------------------------------------------------------------------- #
+# 7. Interactive-list helpers: escape tails, key decode, viewport scroll
+# --------------------------------------------------------------------------- #
+def _drive_escape_tail(monkeypatch, byte_stream, ready=True):
+    """Drive ``_escape_tail`` with a synthetic byte stream. Stubs ``os.read``
+    (the raw unbuffered reads the key loop uses — ``_escape_tail`` reads the fd,
+    not the buffered ``sys.stdin``) and ``select`` so every probe reports ready
+    (or not-ready when ``ready=False``)."""
+    it = iter(byte_stream)
+
+    def fake_read(fd, n=1):
+        return next(it).encode("latin-1")
+
+    monkeypatch.setattr(menu_mod.os, "read", fake_read)
+    if ready:
+        monkeypatch.setattr(
+            menu_mod.select, "select", lambda *a, **k: ([a[0][0]], [], [])
+        )
+    else:
+        monkeypatch.setattr(
+            menu_mod.select, "select", lambda *a, **k: ([], [], [])
+        )
+
+
+def test_escape_tail_reads_csi_arrow(monkeypatch):
+    _drive_escape_tail(monkeypatch, ["[", "A"])
+    assert menu_mod._escape_tail(0) == "[A"
+
+
+def test_escape_tail_reads_ss3_arrow(monkeypatch):
+    # Application-cursor-mode terminals send ESC O B for Down — the reader must
+    # not assume the '[' CSI form (the bug that froze the highlight on iTerm2 /
+    # tmux and made the menu appear to "can't scroll up or down").
+    _drive_escape_tail(monkeypatch, ["O", "B"])
+    assert menu_mod._escape_tail(0) == "OB"
+
+
+def test_escape_tail_reads_csi_page_down(monkeypatch):
+    _drive_escape_tail(monkeypatch, ["[", "6", "~"])
+    assert menu_mod._escape_tail(0) == "[6~"
+
+
+def test_escape_tail_lone_escape_returns_empty(monkeypatch):
+    # No tail bytes → select reports not-ready → "" (a lone Esc is ignored).
+    _drive_escape_tail(monkeypatch, [], ready=False)
+    assert menu_mod._escape_tail(0) == ""
+
+
+def test_apply_key_maps_csi_and_ss3_arrows():
+    n = 5
+    assert menu_mod._apply_key("[B", 0, n, 10) == 1    # Down (CSI)
+    assert menu_mod._apply_key("OB", 0, n, 10) == 1    # Down (SS3)
+    assert menu_mod._apply_key("[A", 0, n, 10) == 4    # Up wraps to last
+    assert menu_mod._apply_key("[H", 3, n, 10) == 0    # Home
+    assert menu_mod._apply_key("[F", 1, n, 10) == 4    # End
+    assert menu_mod._apply_key("[6~", 0, n, 10) == 4   # PgDn
+    assert menu_mod._apply_key("[5~", 4, n, 10) == 0   # PgUp
+    assert menu_mod._apply_key("junk", 2, n, 10) == 2  # unknown → unchanged
+
+
+def test_scroll_window_keeps_selection_visible():
+    # Short list (fits) → no scrolling.
+    assert menu_mod._scroll_window(sel=3, top=0, height=13, n=13) == 0
+    # sel inside window → top unchanged.
+    assert menu_mod._scroll_window(sel=5, top=4, height=4, n=13) == 4
+    # sel above window → scroll up to reveal it.
+    assert menu_mod._scroll_window(sel=2, top=4, height=4, n=13) == 2
+    # sel below window → scroll down to reveal it.
+    assert menu_mod._scroll_window(sel=9, top=4, height=4, n=13) == 6

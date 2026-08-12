@@ -453,7 +453,11 @@ def _block_memory_write(payload: dict[str, Any], db_path: str) -> dict[str, Any]
     file_path = tool_input.get("file_path") or tool_input.get("path") or ""
     if not file_path:
         return _allow("PreToolUse")
-    abs_target = os.path.abspath(os.path.expanduser(file_path))
+    # Canonicalize to the same form _protected_store_paths stores: normcase
+    # lowercases the drive + normalizes separators on Windows (no-op on POSIX)
+    # so a ~/.isotope_zero root that expanduser returns with forward slashes
+    # still prefix-matches a target that abspath normalized to backslashes.
+    abs_target = os.path.normcase(os.path.abspath(os.path.expanduser(file_path)))
     files, dir_roots = _protected_store_paths(db_path)
     # Exact-match the store file + sidecars (a relocated store's sibling
     # files must remain writable); prefix-match the directory roots.
@@ -486,7 +490,15 @@ def _protected_store_paths(db_path: str) -> tuple[set[str], set[str]]:
     if not db_path or db_path == ":memory:":
         return set(), set()
     files: set[str] = set()
-    store_file = os.path.abspath(os.path.expanduser(db_path))
+    # Canonical form: normcase (drive lowercase + separator normalization on
+    # Windows, no-op on POSIX) + normpath so every file/root matches the
+    # normcase'd abs_target _block_memory_write compares against. On Windows,
+    # os.path.expanduser("~/.isotope_zero") keeps the forward slash from the
+    # literal while abspath normalizes the target to backslashes — without
+    # normalizing here, the prefix match would fail and the write-guard would
+    # silently allow a write into the store dir (regression guard:
+    # test_blocks_write_into_isotope_zero_store_dir on win).
+    store_file = os.path.normcase(os.path.abspath(os.path.expanduser(db_path)))
     files.add(store_file)
     stem, _ = os.path.splitext(store_file)
     # SQLite sidecars: the modern hyphenated names + the legacy dotted ones.
@@ -496,7 +508,9 @@ def _protected_store_paths(db_path: str) -> tuple[set[str], set[str]]:
     # The conventional store dir root — guards the default location even when
     # db_path points elsewhere (so an agent can't sidestep a relocated store by
     # writing into the default ~/.isotope_zero/).
-    dir_roots.add(os.path.expanduser("~/.isotope_zero"))
+    dir_roots.add(
+        os.path.normcase(os.path.normpath(os.path.expanduser("~/.isotope_zero")))
+    )
     parent = os.path.dirname(store_file)
     parent_base = os.path.basename(parent).lower()
     if "isotope_zero" in parent_base or ".izero" in parent_base:

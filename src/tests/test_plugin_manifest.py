@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -292,6 +293,14 @@ class TestHookWrapperExitCodes:
     the real wrapper and asserts exit 2 survives it.
     """
 
+    # The two tests below execute the real ``.sh`` wrappers with ``bash``. On
+    # Windows the ``bash`` on PATH is WSL's (C:\\Windows\\System32\\bash.exe),
+    # which errors "no installed distributions" and exits 1 — so the wrapper
+    # contract can't be exercised there. The python-side contract they pin
+    # (deny ⇒ exit 2, allow ⇒ exit 0) is already asserted cross-platform by
+    # ``test_hooks.py::TestBlockMemoryWrite`` (via ``handle_hook``), so
+    # skipping the POSIX shell-wrapper execution on Windows loses nothing.
+    @pytest.mark.skipif(os.name == "nt", reason="bash-wrapper contract is POSIX-only")
     def test_guard_wrapper_propagates_deny_exit_2(self, tmp_path):
         """Feed the guard a Write payload targeting the store file and assert
         the wrapper exits 2 (deny). Uses ``ISOTOPE_ZERO_DB`` pointed at a temp
@@ -323,6 +332,7 @@ class TestHookWrapperExitCodes:
             f"The wrapper likely swallows the deny via an if/else or || pattern."
         )
 
+    @pytest.mark.skipif(os.name == "nt", reason="bash-wrapper contract is POSIX-only")
     def test_non_guard_wrappers_always_exit_0(self, tmp_path):
         """The six context-injection hooks must never block the editor stream —
         even on a store error, they exit 0. Feed each an empty payload and
