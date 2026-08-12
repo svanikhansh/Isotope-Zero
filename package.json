@@ -1,18 +1,23 @@
 {
   "name": "isotope-zero",
   "version": "1.5.0",
-  "description": "Sub-millisecond, local-first cognitive memory layer for AI agents — NumPy/BLAS-accelerated hybrid retrieval, Ebbinghaus decay, and knowledge compaction.",
-  "main": "src/index.ts",
+  "description": "Sub-millisecond, local-first cognitive memory layer for AI agents — NumPy/BLAS-accelerated hybrid retrieval, Ebbinghaus decay, and knowledge compaction. Ships a premium React/Ink terminal UI plus the `izero` Python CLI bridge.",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./tui/*": "./dist/tui/*.js"
+  },
   "type": "module",
   "bin": {
     "izero": "bin/izero.js"
   },
   "files": [
     "bin/",
-    "src/",
-    "logger.ts",
-    "keyboard.ts"
+    "dist/"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/isotope-zero/isotope-zero"
@@ -26,7 +31,9 @@
     "vector-search",
     "onnx",
     "rag",
-    "sqlite"
+    "sqlite",
+    "tui",
+    "ink"
   ],
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
@@ -36,15 +43,16 @@
     "yoga-layout": "^3.2.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
+    "@types/node": "^26.2.0",
     "@types/react": "^18.3.1",
-    "@types/react-dom": "^18.3.1",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   },
   "scripts": {
     "dev": "tsx bin/izero.js tui",
-    "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run typecheck && npm run build",
+    "test": "node bin/izero.js --version && node bin/izero.js help"
   }
 }

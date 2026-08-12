@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from "recharts";
 import { cn } from "@/lib/utils";
 
-interface VitalityChartProps {
+export interface VitalityChartProps {
   fresh: number;
   aging: number;
   decayed: number;

@@ -9,7 +9,7 @@ from .types import ActionType, ActionResult, ConsolidationReport, MemoryCard, Qu
 from .tokens import estimate_tokens
 from .client import IsotopeZero
 
-__version__ = "1.3.2"
+__version__ = "1.5.0"
 
 __all__ = [
     "ActionType",

@@ -1,21 +1,16 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { render, useApp } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import {
   Box,
   Text,
-  Card,
   Header,
   Footer,
   Sidebar,
   StatTile,
-  Table,
-  ProgressBar,
-  Modal,
-} from './components';
-import { useKeyboardShortcuts, useListNavigation } from './hooks/useKeyboard';
-import { useTheme } from './hooks/useTheme';
-import { getTheme } from './theme';
+} from './components/index.js';
+import { useKeyboardShortcuts, useListNavigation } from './hooks/useKeyboard.js';
+import { useTheme } from './hooks/useTheme.js';
 
 // --- Model Registry Data ---
 const MODEL_CATALOG = [
@@ -93,7 +88,7 @@ const ModelSelector = ({
         borderStyle="round"
         borderColor="muted"
       >
-        <Text variant="muted" fontSize="small">
+        <Text variant="muted">
           Filter models... {filteredModels.length}/{MODEL_CATALOG.length} active
         </Text>
         <Box flexDirection="row" gap={2}>
@@ -113,8 +108,8 @@ const ModelSelector = ({
       <Box flexDirection="row" alignItems="center" marginTop={2} marginBottom={2}>
         <Text variant="primary" weight="bold" marginRight={1}>/model </Text>
         <TextInput
-          value={searchQuery}
-          onChange={setSearchQuery}
+          defaultValue={searchQuery}
+          onChange={(v) => setSearchQuery(v)}
           placeholder="Search registry..."
         />
         <Text variant="primary" weight="bold">█</Text>
@@ -142,7 +137,7 @@ const ModelSelector = ({
                 {i === selectedIndex ? '› ' : '  '} {model.id}
               </Text>
             </Box>
-            <Text variant="subtle" italic fontSize="small">
+            <Text variant="subtle" italic>
               (Click to set alias)
             </Text>
           </Box>
@@ -191,7 +186,7 @@ const App = () => {
         <Box flex={1} padding={2}>
           {state.view === 'dashboard' ? (
             <Box flexDirection="column" gap={2}>
-              <Text variant="bright" weight="bold" fontSize="large">System Dashboard</Text>
+              <Text variant="bright" weight="bold">System Dashboard</Text>
               <Box flexDirection="row" gap={2}>
                 <StatTile label="Memories" value="124" icon={<Text>🧠</Text>} />
                 <StatTile label="Storage" value="42MB" icon={<Text>💾</Text>} />
@@ -209,10 +204,6 @@ const App = () => {
 
 export async function runTUI() {
   render(<App />);
-}
-
-if (import.meta.main) {
-  await runTUI();
 }
 
 export default App;

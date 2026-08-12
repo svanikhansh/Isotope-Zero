@@ -1,6 +1,6 @@
 import React from 'react';
-import { Box, Text } from '.';
-import { Dimensions } from '../theme';
+import { Box, Text } from './index.js';
+import { Dimensions } from '../theme/index.js';
 
 export interface HeaderProps {
   title: string;

@@ -12,6 +12,35 @@ zero-dependency paths that keep the package runnable with nothing installed).
 
 ---
 
+## [1.5.0] — Radical TUI overhaul: React/Ink terminal UI + Node bridge
+
+The repo-root **npm package `isotope-zero` pivoted from a thin Python launcher
+into a standalone React/Ink terminal UI** (`izero` / `izero tui` opens a premium
+`/model` selector dashboard). npm and PyPI are now in **version lockstep at
+1.5.0**; the npm bin is pure Node — compiled with `tsc` to `dist/`, no Bun or
+Python runtime required to open the TUI.
+
+### Added
+- **React/Ink TUI** — `izero` / `izero tui` launches the animated terminal
+  dashboard with `--theme` selection (ocean-blue, forest-green, sunset-orange,
+  monochrome) and a `/model` command palette.
+- **npm release engineering** — real `tsc` build to `dist/`, `bin/izero.js` on
+  `#!/usr/bin/env node`, `exports` map, `engines.node >= 18`; `npm test` (smoke)
+  + a GitHub Actions **Node/TypeScript job** in CI (typecheck + build + smoke).
+- **Hybrid Python bridge** — non-TUI subcommands (`add`, `recall`, `search`,
+  `list`, `serve`, `consolidate`, `config`, …) delegate to the installed Python
+  CLI (`izero` / `python3 -m isotope_zero.cli.main`), degrading gracefully with
+  a clear `pip install isotope-zero` message when Python is absent.
+
+### Changed
+- Version lockstep **1.3.2 → 1.5.0** across `package.json`, `pyproject.toml`,
+  `__init__.py`, `web/package.json`, and the README badge (tag `v1.5.0`).
+- **`release-npm.yml`** now publishes from the **repo root** (the old
+  `working-directory: npm` no longer exists) with `npm ci` + `npm test` before
+  publish.
+
+---
+
 ## [1.3.2] — Fix published-wheel deps (typer + rich)
 
 **1.3.1 was a broken publish** — the wheel that hit PyPI/npm declared only

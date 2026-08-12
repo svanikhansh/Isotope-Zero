@@ -1,22 +1,21 @@
 /**
- * isotope-zero - Main Entry Point
- * Sub-millisecond, local-first cognitive memory layer for AI agents
+ * isotope-zero — library entry point.
+ *
+ * Re-exports the TUI renderer, the React root component, the CLI dispatcher,
+ * and the TUI building blocks. Importing this module has no side effects (it
+ * does NOT launch the terminal UI — use the `izero` bin or `runTUI()` for that).
  */
+export { runTUI, default as App } from './tui/App.js';
+export { main as cli } from './cli.js';
+export { runPythonCommand } from './pybridge.js';
 
-export { runTUI } from './tui/App.ts';
-export { default as App } from './tui/App.ts';
+// TUI components
+export * from './tui/components/index.js';
 
-// Re-export core utilities
-export * from './logger.ts';
-export * from './keyboard.ts';
-export * from './constants.ts';
+// TUI hooks
+export { useKeyboardShortcuts, useListNavigation, useForm } from './tui/hooks/useKeyboard.js';
+export { useTheme } from './tui/hooks/useTheme.js';
 
-// Re-export TUI components
-export * from './tui/components/index.ts';
-export * from './tui/theme/index.ts';
-export * from './tui/hooks/useKeyboard.ts';
-export * from './tui/hooks/useTheme.ts';
-
-// Types
-export type { ThemeName, ThemeColors } from './tui/theme/colors.ts';
-export type { SpacingValue, PaddingValue, MarginValue } from './tui/theme/spacing.ts';
+// TUI theme
+export { getTheme, themes, type ThemeName, type ThemeColors } from './tui/theme/colors.js';
+export { Dimensions, flexStyles } from './tui/theme/spacing.js';

@@ -8,11 +8,19 @@ import { cn } from "@/lib/utils";
 export interface TextInputProps
   extends Omit<
     React.InputHTMLAttributes<HTMLInputElement>,
-    "onAnimationStart" | "onAnimationEnd" | "onDrag" | "onDragStart" | "onDragEnd"
+    | "onAnimationStart"
+    | "onAnimationEnd"
+    | "onDrag"
+    | "onDragStart"
+    | "onDragEnd"
+    | "onSubmit"
+    | "value"
   > {
   label?: string;
   help?: string;
   error?: string;
+  value?: string;
+  onSubmit?: (value: string) => void;
   type?: "text" | "password" | "search";
   maxLength?: number;
   showCharacterCount?: boolean;
@@ -295,7 +303,7 @@ export function TextInput({
             id={helpId}
             role={error ? "alert" : undefined}
             aria-live={error ? "polite" : undefined}
-            aria-atomic={error}
+            aria-atomic={error ? true : undefined}
           >
             {help && !error && (
               <span className="text-sm text-[var(--muted-foreground)]">

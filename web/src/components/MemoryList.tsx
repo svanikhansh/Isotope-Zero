@@ -13,7 +13,7 @@ export interface MemoryItem {
   updated_at?: number;
 }
 
-interface MemoryListProps {
+export interface MemoryListProps {
   memories: MemoryItem[];
   className?: string;
   emptyMessage?: string;

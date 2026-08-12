@@ -1,2 +1,2 @@
-export { getTheme, themes, type ThemeName, type ThemeColors } from './colors';
-export { Dimensions, flexStyles } from './spacing';
+export { getTheme, themes, type ThemeName, type ThemeColors } from './colors.js';
+export { Dimensions, flexStyles } from './spacing.js';

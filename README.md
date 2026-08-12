@@ -4,7 +4,7 @@
 
 **Sub-millisecond, local-first cognitive memory layer for AI agents and LLM applications.**
 
-[![v1.3.2](https://img.shields.io/badge/version-v1.3.2-brightgreen)](#benchmark-scorecard)
+[![v1.5.0](https://img.shields.io/badge/version-v1.5.0-brightgreen)](#benchmark-scorecard)
 [![Tests: 608 passed](https://img.shields.io/badge/tests-608%20passed-brightgreen)](#benchmark-scorecard)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -36,20 +36,22 @@ Isotope Zero is engineered for minimal footprint and maximum throughput:
 - **Vector Acceleration:** NumPy (float32 BLAS GEMM)
 - **Storage Engine:** SQLite (WAL mode, FTS5 for lexical search)
 - **Embedding Runtime:** ONNX Runtime (Local quantized models)
-- **Distribution Wrapper:** Node.js (for `izero-cli` npm distribution)
+- **Distribution Wrapper:** Node.js — the `isotope-zero` npm package ships a React/Ink TUI (`izero` / `izero tui`) that delegates engine subcommands to the Python CLI.
 - **Framework Support:** First-class adapters for LangChain, LlamaIndex, AutoGen, and CrewAI.
 
 ---
 
 ## 🚀 Installation
 
-### Via npm (Recommended for CLI)
-The npm wrapper provisions a private Python environment and installs the `izero-cli` automatically.
+### Via npm (Terminal UI)
+The `isotope-zero` npm package is a pure-Node React/Ink TUI — no Python runtime
+needed to open it. Engine subcommands (`add`, `search`, `serve`, …) delegate to
+the Python CLI when it is installed.
 
 ```bash
-npm install -g izero-cli
-# Or run without installation
-npx izero-cli --help
+npm install -g isotope-zero
+izero            # launch the terminal UI
+izero --version  # print the installed version
 ```
 
 ### Via Python (For Developers)

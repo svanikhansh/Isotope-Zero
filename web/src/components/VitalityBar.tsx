@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-interface VitalityBarProps {
+export interface VitalityBarProps {
   fresh: number;
   aging: number;
   decayed: number;

@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { Box, Text } from '.';
+import { Box, Text } from './index.js';
 
 export interface Column<T = any> {
   key: string;
@@ -135,7 +135,7 @@ export function Table<T = any>({
               onKeyDown={(e) => handleKeyDown(e, rowIndex, row)}
             >
               {columns.map((col, colIndex) => {
-                const value = row[col.key];
+                const value = (row as Record<string, unknown>)[col.key];
                 const rendered = col.render
                   ? col.render(value, row, rowIndex)
                   : String(value ?? '');

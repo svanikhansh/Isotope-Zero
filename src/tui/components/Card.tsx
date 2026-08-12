@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import { Box, Text } from '.';
+import { Box, Text } from './index.js';
 
 export interface CardProps {
   title?: string;
@@ -88,7 +88,7 @@ export const Card = forwardRef<any, CardProps>(
       <Box flex={1}>{children}</Box>
 
       {footer && (
-        <Box flexDirection="row" marginTop={1} borderTop="single" borderColor="muted" paddingTop={1}>
+        <Box flexDirection="row" marginTop={1} borderTop borderStyle="single" borderColor="muted" paddingTop={1}>
           {footer}
         </Box>
       )}

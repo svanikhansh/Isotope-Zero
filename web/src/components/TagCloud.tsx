@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-interface TagCloudProps {
+export interface TagCloudProps {
   tags: Array<{ tag: string; count: number }>;
   className?: string;
   activeTag?: string | null;

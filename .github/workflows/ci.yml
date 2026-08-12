@@ -87,3 +87,28 @@ jobs:
           done
           echo "stress FAILED all 3 attempts — treat as a real latency signal, not shared-runner noise"
           exit 1
+
+  # The repo-root npm package pivoted from a thin Python launcher into a
+  # pure-Node React/Ink TUI. Guard the TypeScript build so a broken tarball
+  # never ships: typecheck, compile to dist/, then smoke the bin (version +
+  # help) under real Node.
+  node:
+    name: node (typecheck + build + bin smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build (compile to dist/)
+        run: npm run build
+      - name: Bin smoke (version + help)
+        run: |
+          node bin/izero.js --version
+          node bin/izero.js help
+          node bin/izero.js --version | grep -q "1.5.0"

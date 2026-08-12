@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Radio, Wifi, WifiOff } from "lucide-react";
 
-interface ConnectionBadgeProps {
+export interface ConnectionBadgeProps {
   connected: boolean;
   usingSSE: boolean;
   lastUpdate?: string;

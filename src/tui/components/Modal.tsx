@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, Badge } from '.';
+import { Box, Text, Badge } from './index.js';
 
 export interface ModalProps {
   title: string;

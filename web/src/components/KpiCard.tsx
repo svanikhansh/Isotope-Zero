@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
 
-interface KpiCardProps {
+export interface KpiCardProps {
   label: string;
   value: string | number;
   sub?: string;

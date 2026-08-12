@@ -14,14 +14,17 @@ A premium Terminal User Interface for isotope-zero, built with Ink, Yoga, and Re
 ## Quick Start
 
 ```bash
-# Install dependencies
-bun install
+# Install dependencies (npm — the package ships pure Node, no Bun needed)
+npm install
 
-# Run the TUI
-bun run dev
+# Typecheck + build (compile to dist/)
+npm run build
 
-# Or run directly
-bun run src/tui/App.tsx
+# Run the TUI (compiled — needs `npm run build` first)
+node bin/izero.js tui
+
+# ...or run straight from source with tsx
+npm run dev
 ```
 
 ## Keyboard Shortcuts
@@ -73,10 +76,9 @@ bun run src/tui/App.tsx
 
 ```
 src/
-├── index.ts              # Main exports
-├── constants.ts          # Application constants
-├── logger.ts             # Logging utility
-├── keyboard.ts           # Keyboard shortcut utilities
+├── index.ts              # Library entry (no side effects)
+├── cli.ts                # Node argument dispatcher (dist/cli.js)
+├── pybridge.ts           # Hybrid bridge to the Python `izero` CLI
 ├── tui/
 │   ├── App.tsx           # Main TUI application
 │   ├── theme/
@@ -106,10 +108,13 @@ src/
 
 ```bash
 # Type checking
-bun run typecheck
+npm run typecheck
 
-# Build
-bun run build
+# Build (compile to dist/)
+npm run build
+
+# Smoke (version + help)
+npm test
 ```
 
 ## Design Principles

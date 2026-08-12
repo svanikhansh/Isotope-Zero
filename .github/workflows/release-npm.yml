@@ -1,11 +1,10 @@
 name: Release (npm)
 
-# Publishes the `isotope-zero` npm launcher package to npmjs.com whenever a
-# `v*` tag is pushed — the same trigger as the PyPI Release workflow, but a
-# separate file so an npm failure never blocks the PyPI/GitHub Release path
-# (and vice versa). The npm package is a thin Node launcher that manages an
-# isolated Python env and delegates to the Python `izero` CLI; it carries no
-# native binaries and is platform-independent.
+# Publishes the `isotope-zero` npm package (the React/Ink TUI + Node bin) to
+# npmjs.com whenever a `v*` tag is pushed — the same trigger as the PyPI
+# Release workflow, but a separate file so an npm failure never blocks the
+# PyPI/GitHub Release path (and vice versa). The package is compiled with tsc
+# to `dist/`, ships `bin/` + `dist/`, and is platform-independent.
 on:
   push:
     tags:
@@ -28,16 +27,13 @@ jobs:
           node-version: "24"   # was "20" — Node 20 deprecated 2025-09-19, Actions forces Node 24
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install (no deps — launcher is pure stdlib)
-        working-directory: npm
-        run: npm install --no-fund --no-audit
+      - name: Install dependencies
+        run: npm ci --no-fund --no-audit
 
-      - name: Test
-        working-directory: npm
+      - name: Typecheck + build + bin smoke
         run: npm test
 
       - name: Publish to npm (with provenance)
-        working-directory: npm
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
